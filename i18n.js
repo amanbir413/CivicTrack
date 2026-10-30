@@ -210,29 +210,80 @@ Object.assign(UI_TRANSLATIONS.pa, {
 
 (() => {
     const localizedTextSources = new WeakMap();
+    const localizedAttributeSources = new WeakMap();
     const supportedLanguages = new Set(["en", "hi", "pa"]);
-    const translate = (value, language) => (language !== "en" && UI_TRANSLATIONS[language]?.[value]) || value;
+    const fixedHeadingTranslations = {
+        landingProblemTitle: { en: "A complaint is not a resolution.", hi: "शिकायत अपने आप में समाधान नहीं है।", pa: "ਸ਼ਿਕਾਇਤ ਆਪਣੇ ਆਪ ਵਿੱਚ ਹੱਲ ਨਹੀਂ ਹੁੰਦੀ।" },
+        landingWorkflowTitle: { en: "Accountability has a sequence.", hi: "जवाबदेही की एक प्रक्रिया होती है।", pa: "ਜਵਾਬਦੇਹੀ ਦੀ ਇੱਕ ਪ੍ਰਕਿਰਿਆ ਹੁੰਦੀ ਹੈ।" },
+        landingShortcutsTitle: { en: "What needs attention?", hi: "किस समस्या पर ध्यान देना है?", pa: "ਕਿਹੜੀ ਸਮੱਸਿਆ ਵੱਲ ਧਿਆਨ ਦੇਣਾ ਹੈ?" },
+        landingFinalTitle: { en: "Make every issue count.", hi: "हर समस्या को महत्व दें।", pa: "ਹਰ ਸਮੱਸਿਆ ਨੂੰ ਮਹੱਤਵ ਦਿਓ।" }
+    };
+    const normalizeText = value => String(value).replace(/\s+/g, " ").trim();
+    function sourceForLocalizedText(value) {
+        const normalized = normalizeText(value).toLocaleLowerCase();
+        for (const language of ["hi", "pa"]) {
+            const dictionary = UI_TRANSLATIONS[language] || {};
+            const source = Object.keys(dictionary).find(key => normalizeText(dictionary[key]).toLocaleLowerCase() === normalized);
+            if (source) return source;
+        }
+        return null;
+    }
+    function translate(value, language) {
+        if (language === "en") return value;
+        const dictionary = UI_TRANSLATIONS[language];
+        if (!dictionary) return value;
+        const normalized = normalizeText(value);
+        const rankedWard = normalized.match(/^(\d+)\. Ward (\d+)$/);
+        if (rankedWard) return language === "hi"
+            ? `${rankedWard[1]}. वार्ड ${rankedWard[2]}`
+            : `${rankedWard[1]}. ਵਾਰਡ ${rankedWard[2]}`;
+        if (Object.prototype.hasOwnProperty.call(dictionary, value)) return dictionary[value];
+        if (Object.prototype.hasOwnProperty.call(dictionary, normalized)) return dictionary[normalized];
+        const folded = normalized.toLocaleLowerCase();
+        const matchingKey = Object.keys(dictionary).find(key => normalizeText(key).toLocaleLowerCase() === folded);
+        return matchingKey ? dictionary[matchingKey] : value;
+    }
     function localizeTree(root = document.body, language = "en") {
         if (!root || root.nodeType === Node.TEXT_NODE) root = root?.parentElement || document.body;
+        const keyedElements = root.nodeType === Node.ELEMENT_NODE ? [root, ...root.querySelectorAll("[data-i]")] : [...(root.querySelectorAll?.("[data-i]") || [])];
+        for (const el of keyedElements) {
+            const fixed = fixedHeadingTranslations[el.getAttribute("data-i")];
+            if (fixed && el.children.length === 0) {
+                if (el.textContent !== fixed[language]) el.textContent = fixed[language];
+            } else if (el.hasAttribute("data-i") && el.children.length === 0) {
+                const sourceAttr = "data-i18n-source-text";
+                if (!el.hasAttribute(sourceAttr)) el.setAttribute(sourceAttr, sourceForLocalizedText(el.textContent) || el.textContent);
+                const source = el.getAttribute(sourceAttr), localized = translate(source, language);
+                if (el.textContent !== localized) el.textContent = localized;
+            }
+        }
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), nodes = [];
         while (walker.nextNode()) nodes.push(walker.currentNode);
         for (const node of nodes) {
-            const current = node.nodeValue, saved = localizedTextSources.get(node);
-            const reverseTranslation = Object.entries(UI_TRANSLATIONS.hi).find(([, value]) => value === current.trim())?.[0]
-                || Object.entries(UI_TRANSLATIONS.pa).find(([, value]) => value === current.trim())?.[0];
-            const knownTranslation = saved !== undefined && [saved.trim(), UI_TRANSLATIONS.hi?.[saved.trim()], UI_TRANSLATIONS.pa?.[saved.trim()]].includes(current.trim());
-            if (saved === undefined) localizedTextSources.set(node, reverseTranslation || current);
-            else if (!knownTranslation) localizedTextSources.set(node, reverseTranslation || current);
-            const source = localizedTextSources.get(node), leading = source.match(/^\s*/)?.[0] || "", trailing = source.match(/\s*$/)?.[0] || "", content = source.trim();
+            if (node.parentElement && fixedHeadingTranslations[node.parentElement.getAttribute("data-i")]) continue;
+            const current = node.nodeValue, state = localizedTextSources.get(node);
+            let source = state?.source;
+            if (state && current !== state.last && current !== state.source && current !== state.last.trim()) {
+                source = sourceForLocalizedText(current) || current;
+            } else if (!state) {
+                source = sourceForLocalizedText(current) || current;
+            }
+            const leading = source.match(/^\s*/)?.[0] || "", trailing = source.match(/\s*$/)?.[0] || "", content = source.trim();
             const localized = content ? leading + translate(content, language) + trailing : source;
-            if (node.nodeValue !== localized) node.nodeValue = localized;
+            localizedTextSources.set(node, { source, last: localized });
+            if (current !== localized) node.nodeValue = localized;
         }
         const elements = root.nodeType === Node.ELEMENT_NODE ? [root, ...root.querySelectorAll("*")] : [...(root.querySelectorAll?.("*") || [])];
         for (const el of elements) for (const attr of ["placeholder", "title", "aria-label", "alt"]) if (el.hasAttribute(attr)) {
-            const sourceAttr = `data-i18n-source-${attr}`;
-            if (!el.hasAttribute(sourceAttr)) el.setAttribute(sourceAttr, el.getAttribute(attr));
-            const localized = translate(el.getAttribute(sourceAttr), language);
-            if (el.getAttribute(attr) !== localized) el.setAttribute(attr, localized);
+            let sources = localizedAttributeSources.get(el);
+            if (!sources) { sources = {}; localizedAttributeSources.set(el, sources); }
+            const current = el.getAttribute(attr), state = sources[attr];
+            let source = state?.source;
+            if (state && current !== state.last && current !== state.source) source = sourceForLocalizedText(current) || current;
+            else if (!state) source = el.getAttribute(`data-i18n-source-${attr}`) || current;
+            const localized = translate(source, language);
+            sources[attr] = { source, last: localized };
+            if (current !== localized) el.setAttribute(attr, localized);
         }
     }
     function setLanguage(language) {
@@ -308,5 +359,39 @@ Object.assign(UI_TRANSLATIONS.pa, {
         "Priority uses an AI recommendation for triage, with a local rules fallback. When Google Gemini is configured, your issue title, description, and category are sent after obvious email addresses and phone numbers are removed. Photos, GPS coordinates, and account details are not sent. Avoid including sensitive personal information.": "ਤਰਜੀਹ ਲਈ AI ਦੀ ਸਿਫ਼ਾਰਸ਼ ਅਤੇ ਸਥਾਨਕ ਨਿਯਮਾਂ ਵਾਲਾ ਵਿਕਲਪ ਵਰਤਿਆ ਜਾਂਦਾ ਹੈ। Google Gemini ਸੈੱਟ ਹੋਣ 'ਤੇ ਸਮੱਸਿਆ ਦਾ ਸਿਰਲੇਖ, ਵੇਰਵਾ ਅਤੇ ਸ਼੍ਰੇਣੀ ਭੇਜੇ ਜਾਂਦੇ ਹਨ; ਸਪਸ਼ਟ ਈਮੇਲ ਅਤੇ ਫ਼ੋਨ ਨੰਬਰ ਹਟਾਏ ਜਾਂਦੇ ਹਨ। ਫ਼ੋਟੋਆਂ, GPS ਕੋਆਰਡੀਨੇਟ ਅਤੇ ਖਾਤੇ ਦੀ ਜਾਣਕਾਰੀ ਨਹੀਂ ਭੇਜੀ ਜਾਂਦੀ। ਸੰਵੇਦਨਸ਼ੀਲ ਨਿੱਜੀ ਜਾਣਕਾਰੀ ਨਾ ਲਿਖੋ।",
         "Choose critical, high, normal, or low priority.": "ਬਹੁਤ ਗੰਭੀਰ, ਉੱਚ, ਆਮ ਜਾਂ ਘੱਟ ਤਰਜੀਹ ਚੁਣੋ।", "Enter a reason of up to 500 characters for the priority change.": "ਤਰਜੀਹ ਬਦਲਣ ਦਾ ਕਾਰਨ ਲਿਖੋ (ਵੱਧ ਤੋਂ ਵੱਧ 500 ਅੱਖਰ)।", "Priority can only be changed while department work is active.": "ਤਰਜੀਹ ਸਿਰਫ਼ ਸਰਗਰਮ ਵਿਭਾਗੀ ਕੰਮ ਦੌਰਾਨ ਬਦਲੀ ਜਾ ਸਕਦੀ ਹੈ।", "Priority could not be updated.": "ਤਰਜੀਹ ਅੱਪਡੇਟ ਨਹੀਂ ਹੋ ਸਕੀ।", "The server did not confirm the priority update.": "ਸਰਵਰ ਨੇ ਤਰਜੀਹ ਅੱਪਡੇਟ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਕੀਤੀ।"
     });
-    window.civicI18n = { setLanguage, translate: value => translate(value, window.CIVIC_LANGUAGE || "en"), localize: root => localizeTree(root, window.CIVIC_LANGUAGE || "en") };
+    Object.assign(UI_TRANSLATIONS.hi, {
+        "Roads Dept": "सड़क विभाग", "Water Board": "जल बोर्ड", "Power Corp": "विद्युत निगम", "Sanitation": "स्वच्छता विभाग", "Horticulture": "उद्यान विभाग", "General": "सामान्य सेवाएँ",
+        "assigned": "सौंपा गया", "in progress": "कार्य जारी", "resolution pending confirmation": "पुष्टि की प्रतीक्षा", "reopened": "फिर से खोला गया", "closed": "बंद", "registered": "दर्ज",
+        "Category:": "श्रेणी:", "Department:": "विभाग:", "Status:": "स्थिति:", "View status": "स्थिति देखें", "About": "लगभग"
+    });
+    Object.assign(UI_TRANSLATIONS.pa, {
+        "Roads Dept": "ਸੜਕ ਵਿਭਾਗ", "Water Board": "ਜਲ ਬੋਰਡ", "Power Corp": "ਬਿਜਲੀ ਨਿਗਮ", "Sanitation": "ਸਫ਼ਾਈ ਵਿਭਾਗ", "Horticulture": "ਬਾਗ਼ਬਾਨੀ ਵਿਭਾਗ", "General": "ਆਮ ਸੇਵਾਵਾਂ",
+        "assigned": "ਸੌਂਪਿਆ ਗਿਆ", "in progress": "ਕੰਮ ਜਾਰੀ", "resolution pending confirmation": "ਪੁਸ਼ਟੀ ਦੀ ਉਡੀਕ", "reopened": "ਮੁੜ ਖੋਲ੍ਹਿਆ ਗਿਆ", "closed": "ਬੰਦ", "registered": "ਦਰਜ",
+        "Category:": "ਸ਼੍ਰੇਣੀ:", "Department:": "ਵਿਭਾਗ:", "Status:": "ਸਥਿਤੀ:", "View status": "ਸਥਿਤੀ ਵੇਖੋ", "About": "ਲਗਭਗ"
+    });
+    Object.assign(UI_TRANSLATIONS.hi, {
+        "📍 Allow location & open camera": "स्थान की अनुमति दें और कैमरा खोलें",
+        "A live photo and your location are required to submit this report. Photos are attached privately.": "यह रिपोर्ट भेजने के लिए लाइव फ़ोटो और आपका स्थान आवश्यक है। फ़ोटो निजी रूप से संलग्न की जाती हैं।",
+        "Live photo captured. It will be attached privately when you submit this report.": "लाइव फ़ोटो ले ली गई है। रिपोर्ट भेजते समय इसे निजी रूप से संलग्न किया जाएगा।"
+    });
+    Object.assign(UI_TRANSLATIONS.pa, {
+        "📍 Allow location & open camera": "ਟਿਕਾਣੇ ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ ਅਤੇ ਕੈਮਰਾ ਖੋਲ੍ਹੋ",
+        "A live photo and your location are required to submit this report. Photos are attached privately.": "ਇਹ ਰਿਪੋਰਟ ਭੇਜਣ ਲਈ ਲਾਈਵ ਫ਼ੋਟੋ ਅਤੇ ਤੁਹਾਡਾ ਟਿਕਾਣਾ ਲਾਜ਼ਮੀ ਹੈ। ਫ਼ੋਟੋਆਂ ਨਿੱਜੀ ਤੌਰ 'ਤੇ ਜੋੜੀਆਂ ਜਾਂਦੀਆਂ ਹਨ।",
+        "Live photo captured. It will be attached privately when you submit this report.": "ਲਾਈਵ ਫ਼ੋਟੋ ਖਿੱਚ ਲਈ ਗਈ ਹੈ। ਰਿਪੋਰਟ ਭੇਜਣ ਵੇਲੇ ਇਸਨੂੰ ਨਿੱਜੀ ਤੌਰ 'ਤੇ ਜੋੜਿਆ ਜਾਵੇਗਾ।"
+    });    Object.assign(UI_TRANSLATIONS.hi, {
+        "DEPARTMENT OPERATIONS": "विभागीय संचालन", "Roads Department": "सड़क विभाग", "Water Department": "जल विभाग", "Power Department": "विद्युत विभाग", "Sanitation Department": "स्वच्छता विभाग",
+        "Refresh data": "डेटा रीफ़्रेश करें", "Action required": "कार्रवाई आवश्यक", "Assigned to start": "शुरू करने के लिए सौंपे गए", "In progress": "कार्य जारी", "Due soon": "समय-सीमा निकट", "Awaiting citizen": "नागरिक की प्रतीक्षा",
+        "Awaiting an officer work update": "अधिकारी के कार्य अपडेट की प्रतीक्षा", "Currently being worked on": "वर्तमान में कार्य जारी", "Deadline within the next 4 hours": "अगले 4 घंटों में समय-सीमा", "Submitted for citizen review": "नागरिक समीक्षा के लिए भेजा गया",
+        "Complaint work queue": "शिकायत कार्य सूची", "Ticket and issue": "टिकट और समस्या", "Next action": "अगली कार्रवाई", "Open complaint": "शिकायत खोलें", "All complaints": "सभी शिकायतें", "Filter queue": "सूची फ़िल्टर करें", "Search": "खोजें", "Ticket ID or issue title": "टिकट आईडी या समस्या का शीर्षक",
+        "Manage assigned complaints, monitor deadlines, and submit verified resolutions.": "सौंपी गई शिकायतें संभालें, समय-सीमाओं पर नज़र रखें और सत्यापित समाधान भेजें।",
+        "A complaint is not a resolution.": "शिकायत अपने आप में समाधान नहीं है।", "Accountability has a sequence.": "जवाबदेही की एक प्रक्रिया होती है।", "What needs attention?": "किस समस्या पर ध्यान देना है?", "Make every issue count.": "हर समस्या को महत्व दें।"
+    });
+    Object.assign(UI_TRANSLATIONS.pa, {
+        "DEPARTMENT OPERATIONS": "ਵਿਭਾਗੀ ਕਾਰਜ", "Roads Department": "ਸੜਕ ਵਿਭਾਗ", "Water Department": "ਜਲ ਵਿਭਾਗ", "Power Department": "ਬਿਜਲੀ ਵਿਭਾਗ", "Sanitation Department": "ਸਫ਼ਾਈ ਵਿਭਾਗ",
+        "Refresh data": "ਡਾਟਾ ਤਾਜ਼ਾ ਕਰੋ", "Action required": "ਕਾਰਵਾਈ ਲੋੜੀਂਦੀ", "Assigned to start": "ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਸੌਂਪੇ", "In progress": "ਕੰਮ ਜਾਰੀ", "Due soon": "ਮਿਆਦ ਨੇੜੇ", "Awaiting citizen": "ਨਾਗਰਿਕ ਦੀ ਉਡੀਕ",
+        "Awaiting an officer work update": "ਅਧਿਕਾਰੀ ਦੇ ਕੰਮ ਅੱਪਡੇਟ ਦੀ ਉਡੀਕ", "Currently being worked on": "ਇਸ ਵੇਲੇ ਕੰਮ ਜਾਰੀ ਹੈ", "Deadline within the next 4 hours": "ਅਗਲੇ 4 ਘੰਟਿਆਂ ਵਿੱਚ ਮਿਆਦ", "Submitted for citizen review": "ਨਾਗਰਿਕ ਦੀ ਸਮੀਖਿਆ ਲਈ ਭੇਜਿਆ",
+        "Complaint work queue": "ਸ਼ਿਕਾਇਤਾਂ ਦੀ ਕੰਮ ਕਤਾਰ", "Ticket and issue": "ਟਿਕਟ ਅਤੇ ਸਮੱਸਿਆ", "Next action": "ਅਗਲੀ ਕਾਰਵਾਈ", "Open complaint": "ਸ਼ਿਕਾਇਤ ਖੋਲ੍ਹੋ", "All complaints": "ਸਾਰੀਆਂ ਸ਼ਿਕਾਇਤਾਂ", "Filter queue": "ਕਤਾਰ ਫ਼ਿਲਟਰ ਕਰੋ", "Search": "ਖੋਜੋ", "Ticket ID or issue title": "ਟਿਕਟ ID ਜਾਂ ਸਮੱਸਿਆ ਦਾ ਸਿਰਲੇਖ",
+        "Manage assigned complaints, monitor deadlines, and submit verified resolutions.": "ਸੌਂਪੀਆਂ ਸ਼ਿਕਾਇਤਾਂ ਸੰਭਾਲੋ, ਮਿਆਦਾਂ 'ਤੇ ਨਜ਼ਰ ਰੱਖੋ ਅਤੇ ਤਸਦੀਕ ਕੀਤੇ ਹੱਲ ਭੇਜੋ।",
+        "A complaint is not a resolution.": "ਸ਼ਿਕਾਇਤ ਆਪਣੇ ਆਪ ਵਿੱਚ ਹੱਲ ਨਹੀਂ ਹੁੰਦੀ।", "Accountability has a sequence.": "ਜਵਾਬਦੇਹੀ ਦੀ ਇੱਕ ਪ੍ਰਕਿਰਿਆ ਹੁੰਦੀ ਹੈ।", "What needs attention?": "ਕਿਹੜੀ ਸਮੱਸਿਆ ਵੱਲ ਧਿਆਨ ਦੇਣਾ ਹੈ?", "Make every issue count.": "ਹਰ ਸਮੱਸਿਆ ਨੂੰ ਮਹੱਤਵ ਦਿਓ।"
+    });    window.civicI18n = { setLanguage, translate: value => translate(value, window.CIVIC_LANGUAGE || "en"), localize: root => localizeTree(root, window.CIVIC_LANGUAGE || "en") };
 })();

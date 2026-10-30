@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: civic_test
+          POSTGRES_USER: civic
+          POSTGRES_PASSWORD: civic_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U civic -d civic_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://civic:civic_test_password@localhost:5432/civic_test
+      JWT_SECRET: ci-only-secret-at-least-thirty-two-bytes-long
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test

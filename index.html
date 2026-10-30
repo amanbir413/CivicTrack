@@ -12,6 +12,30 @@
 </head>
 
 <body>
+    <dialog id="contentReviewDialog" class="content-review-dialog">
+        <div id="contentReviewResult" class="content-review-result" role="status" aria-live="polite">
+            <h3 id="contentReviewTitle"></h3><p id="contentReviewMessage"></p>
+            <button type="button" class="btn rust" id="contentReviewClose">Continue</button>
+        </div>
+    </dialog>
+    <dialog id="welcomeSetup" class="welcome-setup" aria-labelledby="welcomeTitle">
+        <form method="dialog" id="welcomeLanguageForm">
+            <h2 id="welcomeTitle">Welcome to CivicTrack</h2>
+            <p>Choose your language to get started.</p>
+            <label for="welcomeLanguage">Language</label>
+            <select id="welcomeLanguage"><option value="en">English</option><option value="hi">हिंदी</option><option value="pa">ਪੰਜਾਬੀ</option></select>
+            <button class="btn rust" id="welcomeContinue" value="continue">Continue</button>
+        </form>
+    </dialog>
+    <dialog id="locationSetup" class="welcome-setup" aria-labelledby="locationSetupTitle">
+        <div class="welcome-location-content">
+            <h2 id="locationSetupTitle">Use your location?</h2>
+            <p>Location helps center nearby civic reports and can be used when you submit a report. Your browser will ask for permission. You can skip this and use the site without location.</p>
+            <button class="btn rust" id="allowWelcomeLocation" type="button">Allow location</button>
+            <button class="btn line" id="skipWelcomeLocation" type="button">Skip</button>
+            <p id="welcomeLocationStatus" class="mut" role="status" aria-live="polite"></p>
+        </div>
+    </dialog>
     <div id="splash">
         <div class="lg"><img src="images/websiteLogo.jpeg" alt=""></div>
         <h1>CivicTrack</h1>
@@ -302,6 +326,11 @@
                 <div class="steps" id="steps"></div>
                 <h3 id="stepT"></h3>
                 <div id="s1">
+                    <div class="grid" id="catPick"></div>
+                    <p class="mut" id="sugg"></p>
+                    <p class="mut" id="formError" role="alert"></p>
+                </div>
+                <div id="s2" hidden>
                     <div class="capture-panel" id="drop">
                         <video id="cameraPreview" autoplay playsinline muted hidden></video>
                         <img id="photoPreview" alt="Live photo preview" hidden>
@@ -317,12 +346,15 @@
                         style="margin-top:12px">
                     <textarea id="desc" rows="3" maxlength="2000" placeholder="Describe the problem (optional)"
                         style="margin-top:12px"></textarea>
-                    <p class="mut priority-privacy-note">Priority uses an AI recommendation for triage, with a local rules fallback. When Google Gemini is configured, your issue title, description, and category are sent after obvious email addresses and phone numbers are removed. Photos, GPS coordinates, and account details are not sent. Avoid including sensitive personal information.</p>
-                    <button class="btn line" style="margin-top:8px" id="mic">🎤 Speak description</button>
+                    <p class="mut priority-privacy-note">Google Gemini checks that your issue title, description, selected category, and live photo are relevant before submission. This content is sent to Google for review; GPS coordinates and account details are not sent for this check. Priority is also an AI recommendation for staff review. Avoid including sensitive personal information.</p>
+                    <div class="voice-controls" style="margin-top:8px">
+                        <button class="btn line" type="button" id="mic" aria-pressed="false">🎤 Start voice input</button>
+                        <button class="btn line" type="button" id="voiceContinue" hidden>Continue speaking</button>
+                    </div>
+                    <p id="voiceStatus" class="mut" role="status" aria-live="polite" hidden></p>
                 </div>
-                <div id="s2" hidden>
-                    <p class="mut">Select the issue location on OpenStreetMap. The pin is used for nearby suggestions
-                        and saved with your report.</p>
+                <div id="s3" hidden>
+                    <p class="mut">The map centers on your GPS position. Check or adjust the issue pin inside the 50 m orange circle; pins outside it are not allowed.</p>
                     <div id="pickMap" class="leaflet-map picker-map" role="application"
                         aria-label="Select complaint location on map"></div>
                     <div id="manualLocation" hidden>
@@ -334,11 +366,6 @@
                     </div>
                     <p class="mut" id="locationStatus" aria-live="polite">No location selected.</p>
                     <div id="dupBox"></div>
-                </div>
-                <div id="s3" hidden>
-                    <div class="grid" id="catPick"></div>
-                    <p class="mut" id="sugg"></p>
-                    <p class="mut" id="formError" role="alert"></p>
                 </div>
                 <div id="s4" hidden style="text-align:center"><svg class="tick" width="84" height="84"
                         viewBox="0 0 80 80">
@@ -394,8 +421,11 @@
                         aria-label="Filterable map of saved civic complaints"></div>
                     <p class="mut" id="mapMessage" aria-live="polite">Loading mapped reports…</p>
                 </div>
-                <div class="card" id="popup">
-                    <p class="mut">Tap a pin to see details.</p>
+                <div class="card map-nearby-panel" id="popup" aria-live="polite">
+                    <h3>Nearby public reports</h3>
+                    <p class="mut">Choose a report to focus its location on the map.</p>
+                    <div id="nearbyIssueList"><p class="mut">Loading public reports…</p></div>
+                    <div id="selectedMapReport" hidden></div>
                 </div>
             </div>
         </section>
@@ -409,6 +439,20 @@
             <h2 style="margin-top:0">📋 My saved reports</h2>
             <p class="mut">Reports submitted from your account.</p>
             <div id="mine"></div>
+        </section>
+        <section class="view" id="v-profile" aria-labelledby="profileTitle">
+            <h2 id="profileTitle" style="margin-top:0">My profile</h2>
+            <p class="mut">Your citizen account details and report access.</p>
+            <div class="card profile-card">
+                <h3>Account details</h3>
+                <dl class="profile-details">
+                    <div><dt>Name</dt><dd id="profileName"></dd></div>
+                    <div><dt>Email</dt><dd id="profileEmail"></dd></div>
+                    <div><dt>Account type</dt><dd id="profileRole">Citizen</dd></div>
+                </dl>
+                <p class="mut">To protect your account, these details are view-only here.</p>
+                <button type="button" class="btn rust" id="profileReports">View my reports</button>
+            </div>
         </section>
         <!-- DEPARTMENT / ADMIN DASHBOARD -->
         <section class="view" id="v-dash" aria-labelledby="dashTitle">

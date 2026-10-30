@@ -20,8 +20,12 @@ test("Phase 2-4 authentication, privacy, geographic reports, evidence, escalatio
     const pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}` });
     let server;
     try {
-        for (const file of ["001_initial.sql", "002_auth_and_department_workflow.sql", "003_accountability.sql", "004_geographic_lookup.sql", "005_report_photos.sql"]) {
-            await pool.query(fs.readFileSync(path.join(__dirname, "db", "migrations", file), "utf8"));
+        const migrationDirectory = path.join(__dirname, "db", "migrations");
+        const migrations = (await fs.promises.readdir(migrationDirectory))
+            .filter(file => file.endsWith(".sql"))
+            .sort();
+        for (const file of migrations) {
+            await pool.query(fs.readFileSync(path.join(migrationDirectory, file), "utf8"));
         }
         const { createApp } = require("./server");
         const { LocalStorage } = require("./storage/local");

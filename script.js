@@ -5,6 +5,15 @@ const PRIORITY_LABELS = { critical: "Critical", high: "High", normal: "Normal", 
 const PRIORITY_SOURCE_LABELS = { ai: "AI suggested", rules: "Rule-based fallback", officer: "Officer set" };
 const priorityLabel = level => tr(PRIORITY_LABELS[level] || "Normal");
 const prioritySourceLabel = source => tr(PRIORITY_SOURCE_LABELS[source] || "Rule-based fallback");
+function reportReviewPopup(approved, message) {
+    const dialog = $("#contentReviewDialog"), result = $("#contentReviewResult");
+    result.className = "content-review-result " + (approved ? "approved" : "needs-changes");
+    $("#contentReviewTitle").textContent = approved ? "Report approved" : "Please revise your report";
+    $("#contentReviewMessage").textContent = message;
+    $("#contentReviewClose").textContent = approved ? "Continue" : "Review report";
+    if (!dialog.open) dialog.showModal();
+    return new Promise(resolve => { $("#contentReviewClose").onclick = () => { dialog.close(); resolve(); }; });
+}
 function priorityEventMarkup(note) {
     const value = String(note || "");
     let match = value.match(/^Priority recommendation \((ai|rules|officer)\): (critical|high|normal|low)\.\s*([\s\S]*)$/);
@@ -63,11 +72,12 @@ const stName = t => ["Registered", "In progress", "Escalated", "Resolved"][t.st 
 const col = t => t.st >= 3 ? "var(--green)" : left(t) < 0 ? "#EF4444" : "#F59E0B";
 const stTag = t => { const k = t.st >= 3 ? 3 : (t.lv > 0 ? 2 : t.st); return `<span class="tag s${k}">${["Registered", "In progress", "Escalated", "Resolved"][k]}</span>` };
 const dueTxt = t => t.st >= 3 ? "Done" : left(t) < 0 ? `<span class="od">Overdue ${fmt(left(t))}</span>` : "Due in " + fmt(left(t));
-function tick() { let ch = 0; T.forEach(t => { if (t.st < 3 && left(t) < 0 && t.lv < 3) { t.lv++; t.dl = now() + SLA[t.lv] * H; t.ev.push([now(), "âš ï¸ Deadline missed â†’ escalated to " + LV[t.lv] + " (alert sent)"]); ch = 1; toast("Ticket #" + t.id + " auto-escalated to " + LV[t.lv]); notify("ðŸš¨ #" + t.id + " escalated to " + LV[t.lv], t.id) } }); if (ch || true) paint() }
-function paint() { const v = view; if (v == "home") { renderSavedMap("home"); renderSavedMap("explore") } if (v == "map") { renderSavedMap("main"); requestAnimationFrame(() => maps.main?.invalidateSize()) } if (v == "ward") wards(); if (v == "mine") mine(); if (v == "dash") loadOfficerDashboard(); if (v == "track" && cur) showT(cur, 1) }
+function tick() { let ch = 0; T.forEach(t => { if (t.st < 3 && left(t) < 0 && t.lv < 3) { t.lv++; t.dl = now() + SLA[t.lv] * H; t.ev.push([now(), "âš ï¸ Deadline missed â†’ escalated to " + LV[t.lv] + " (alert sent)"]); ch = 1; toast("Ticket #" + t.id + " auto-escalated to " + LV[t.lv]); notify("● #" + t.id + " escalated to " + LV[t.lv], t.id) } }); if (ch || true) paint() }
+function paint() { const v = view; if (v == "home") { renderSavedMap("home"); renderSavedMap("explore") } if (v == "map") { renderSavedMap("main"); requestAnimationFrame(() => maps.main?.invalidateSize()) } if (v == "ward") wards(); if (v == "mine") mine(); if (v == "profile") profile(); if (v == "dash") loadOfficerDashboard(); if (v == "track" && cur) showT(cur, 1) }
 /* NAV */
 function nav() {
     const citizen = [["home", "Home"], ["report", "Report"], ["track", "Track"], ["map", "Map"], ["ward", "Wards"], ["mine", "My reports"]];
+    if (currentUser?.role === "citizen") citizen.push(["profile", "Profile"]);
     const staff = [["dash", "Dashboard"], ["map", "Live map"], ["ward", "Wards"]];
     const links = ["officer", "administrator"].includes(currentUser?.role) ? staff : citizen;
     $("#nav").innerHTML = links.map(x => `<button data-v="${x[0]}" class="${x[0] == view ? "on" : ""}">${window.civicI18n?.translate(x[1]) || (NV[LG] || {})[x[1]] || x[1]}</button>`).join("");
@@ -82,17 +92,18 @@ function updateSession() {
 }
 function go(v) {
     if (v === "report" && currentUser?.role !== "citizen") { toast("Sign in with a citizen account to submit a report"); v = "auth"; }
-    if ((v === "dash" || v === "mine") && !currentUser) { toast("Sign in to view this page"); v = "auth"; }
+    if ((v === "dash" || v === "mine" || v === "profile") && !currentUser) { toast("Sign in to view this page"); v = "auth"; }
     if (v === "dash" && !["officer", "administrator"].includes(currentUser?.role)) { toast("This page is for department staff"); v = "home"; }
     if (v === "mine" && currentUser?.role !== "citizen") v = "home";
+    if (v === "profile" && currentUser?.role !== "citizen") v = "home";
     if (v !== "report") {
         stopCameraStream();
         if (view === "report") {
             if (reportPhotoUrl) URL.revokeObjectURL(reportPhotoUrl);
             reportPhoto = null; reportPhotoUrl = null;
             $("#photoPreview").removeAttribute("src"); $("#photoPreview").hidden = true;
-            $("#cameraStart").textContent = "📍 Allow location & open camera";
-            $("#photoNotice").textContent = "A live photo and your location are required to submit this report. Photos are attached privately.";
+            $("#cameraStart").textContent = tr("📍 Allow location & open camera");
+            $("#photoNotice").textContent = tr("A live photo and your location are required to submit this report. Photos are attached privately.");
         }
     }
     view = v; document.body.classList.toggle("landing-active", v === "home"); $$(".view").forEach(e => e.classList.toggle("on", e.id == "v-" + v)); nav(); if (v == "report") wiz(1); animOn(); paint(); reveal(); scrollTo(0, 0); window.civicI18n?.localize(document.getElementById("v-" + v) || document.body); requestAnimationFrame(() => { ["home", "explore"].forEach(name => { if (v === "home") maps[name]?.invalidateSize(); }); maps[v === "report" ? "pick" : v === "map" ? "main" : ""]?.invalidateSize(); });
@@ -136,6 +147,41 @@ window.refreshLocalizedUI = () => {
     window.civicI18n?.localize(document.body);
 };
 $("#lang").onchange = event => window.civicI18n?.setLanguage(event.currentTarget.value);
+const welcomeSetup = $("#welcomeSetup");
+const locationSetup = $("#locationSetup");
+const startupSetupKey = "civic-startup-setup-v2";
+if (welcomeSetup && !localStorage.getItem(startupSetupKey)) {
+    $("#welcomeLanguage").value = LG;
+    welcomeSetup.showModal();
+}
+$("#welcomeLanguageForm")?.addEventListener("submit", event => {
+    event.preventDefault();
+    const selectedLanguage = $("#welcomeLanguage").value;
+    window.civicI18n?.setLanguage(selectedLanguage);
+    $("#lang").value = selectedLanguage;
+    welcomeSetup.close("language-selected");
+});
+welcomeSetup?.addEventListener("close", () => {
+    if (welcomeSetup.returnValue === "language-selected" && !localStorage.getItem(startupSetupKey)) {
+        locationSetup?.showModal();
+    }
+});
+$("#allowWelcomeLocation")?.addEventListener("click", async () => {
+    const status = $("#welcomeLocationStatus");
+    status.textContent = "Requesting location permission…";
+    try {
+        await requestDeviceLocation();
+        localStorage.setItem(startupSetupKey, "done");
+        locationSetup.close();
+    } catch (error) {
+        status.textContent = error.message + " You can continue without location.";
+        $("#skipWelcomeLocation").focus();
+    }
+});
+$("#skipWelcomeLocation")?.addEventListener("click", () => {
+    localStorage.setItem(startupSetupKey, "done");
+    locationSetup.close();
+});
 const supportEmail = document.querySelector('meta[name="support-email"]')?.content.trim() || "";
 if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(supportEmail)) {
     $("#contactStatus").hidden = true; $("#contactEmailRow").hidden = false;
@@ -150,7 +196,8 @@ let R = { step: 1, cat: "roads", latitude: null, longitude: null }; const guess 
 
 const MAP_CENTER = [22.5726, 88.3639];
 const NEARBY_RADIUS_METERS = 5000;
-let deviceLocation = null, locationRequestPromise = null;
+const REPORT_PIN_RADIUS_METERS = 50;
+let deviceLocation = null, locationRequestPromise = null, reportLocationAnchor = null, reportLocationCircle = null, gpsAccuracyCircle = null, currentLocationMarker = null;
 function requestDeviceLocation() {
     if (deviceLocation) return Promise.resolve(deviceLocation);
     if (locationRequestPromise) return locationRequestPromise;
@@ -158,7 +205,9 @@ function requestDeviceLocation() {
     locationRequestPromise = new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(
             position => {
-                deviceLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+                deviceLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy };
+                reportLocationAnchor = deviceLocation;
+                syncReportLocationMap();
                 resolve(deviceLocation);
             },
             error => reject(new Error(error.code === error.PERMISSION_DENIED
@@ -166,7 +215,7 @@ function requestDeviceLocation() {
                 : error.code === error.POSITION_UNAVAILABLE
                     ? "Your location is unavailable right now. Try again."
                     : "Location took too long. Try again.")),
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
         );
     }).finally(() => { locationRequestPromise = null; });
     return locationRequestPromise;
@@ -216,16 +265,36 @@ function initializeMaps() {
     if (!maps.home) maps.home = makeLeafletMap("#homeMap", 12);
     if (!maps.explore) maps.explore = makeLeafletMap("#exploreMap", 12);
     if (!maps.main) maps.main = makeLeafletMap("#mainMap", 12);
-    if (maps.pick) return;
-    $("#pickMap").onclick = null;
-    maps.pick = makeLeafletMap("#pickMap", 14);
-    if (!maps.pick) return;
-    maps.pick.on("click", e => setReportLocation(e.latlng.lat, e.latlng.lng));
-    maps.pick.on("tileerror", () => { $("#manualLocation").hidden = false; $("#locationStatus").textContent = "Map tiles are unavailable. Enter coordinates below."; });
+    if (!maps.pick) {
+        $("#pickMap").onclick = null;
+        maps.pick = makeLeafletMap("#pickMap", 18);
+        if (!maps.pick) return;
+        maps.pick.on("click", e => setReportLocation(e.latlng.lat, e.latlng.lng));
+        maps.pick.on("tileerror", () => { $("#manualLocation").hidden = false; $("#locationStatus").textContent = "Map tiles are unavailable. Enter coordinates manually within 50 m of the GPS pin."; });
+    }
+    syncReportLocationMap();
     if (R.latitude !== null && R.longitude !== null) setReportLocation(R.latitude, R.longitude, false);
+}
+function syncReportLocationMap() {
+    if (!maps.pick || !window.L || !reportLocationAnchor) return;
+    const center = [reportLocationAnchor.latitude, reportLocationAnchor.longitude];
+    maps.pick.setView(center, 19, { animate: false });
+    if (!reportLocationCircle) reportLocationCircle = window.L.circle(center, { radius: REPORT_PIN_RADIUS_METERS, color: "#f97316", weight: 3, fillColor: "#fb923c", fillOpacity: .2 }).addTo(maps.pick);
+    else reportLocationCircle.setLatLng(center);
+    if (!gpsAccuracyCircle) gpsAccuracyCircle = window.L.circle(center, { radius: Math.max(1, reportLocationAnchor.accuracy || 1), color: "#2563eb", weight: 2, dashArray: "6 5", fillColor: "#3b82f6", fillOpacity: .08 }).addTo(maps.pick);
+    else { gpsAccuracyCircle.setLatLng(center); gpsAccuracyCircle.setRadius(Math.max(1, reportLocationAnchor.accuracy || 1)); }
+    if (!currentLocationMarker) currentLocationMarker = window.L.circleMarker(center, { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).bindTooltip("Your current GPS position", { permanent: true, direction: "top" }).addTo(maps.pick);
+    else currentLocationMarker.setLatLng(center);
+    maps.pick.setMaxBounds(reportLocationCircle.getBounds().pad(.2));
+    requestAnimationFrame(() => maps.pick?.invalidateSize({ pan: false }));
 }
 function setReportLocation(latitude, longitude, search = true) {
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return toast("Enter valid latitude and longitude.");
+    if (reportLocationAnchor && distanceMeters(reportLocationAnchor, { latitude, longitude }) > REPORT_PIN_RADIUS_METERS) {
+        if (selectedMarker && R.latitude !== null && R.longitude !== null) selectedMarker.setLatLng([R.latitude, R.longitude]);
+        $("#locationStatus").textContent = "Choose a pin within 50 m of your current GPS location. The orange circle shows the allowed area.";
+        return;
+    }
     R.latitude = latitude; R.longitude = longitude;
     if (maps.pick && window.L) {
         const point = [latitude, longitude];
@@ -234,7 +303,7 @@ function setReportLocation(latitude, longitude, search = true) {
         maps.pick.setView(point, Math.max(maps.pick.getZoom(), 15));
     }
     $("#manualLat").value = latitude.toFixed(6); $("#manualLng").value = longitude.toFixed(6);
-    $("#locationStatus").textContent = "Selected location " + latitude.toFixed(5) + ", " + longitude.toFixed(5) + ".";
+    $("#locationStatus").textContent = "Selected location " + latitude.toFixed(5) + ", " + longitude.toFixed(5) + ". You may adjust it within 50 m of your GPS location.";
     if (search) dupCheck();
 }
 function drawMap(id, pick) {
@@ -268,7 +337,7 @@ function mapUI() {
 function markerColor(report) { return report.isEscalated ? "#9333ea" : report.isOverdue ? "#dc2626" : report.status === "closed" ? "#059669" : report.status === "reopened" ? "#ea580c" : report.status === "resolution_pending_confirmation" ? "#2563eb" : report.status === "in_progress" ? "#d97706" : "#475569"; }
 function publicStatusName(status) { return ({ assigned: "Assigned", in_progress: "In progress", resolution_pending_confirmation: "Awaiting citizen", reopened: "Reopened", closed: "Closed" })[status] || "Registered"; }
 function showMapReport(report, which = "main") {
-    const target = which === "home" || which === "explore" ? $(which === "home" ? "#homeMapDetail" : "#exploreMapDetail") : $("#popup");
+    const target = which === "home" || which === "explore" ? $(which === "home" ? "#homeMapDetail" : "#exploreMapDetail") : $("#selectedMapReport") || $("#popup");
     if (!target) return;
     target.replaceChildren();
     const eyebrow = document.createElement("p"); eyebrow.className = "eyebrow"; eyebrow.textContent = "PUBLIC TICKET";
@@ -319,6 +388,7 @@ async function renderSavedMap(which) {
             else if (isNearby) statusNode.textContent = reports.length + " nearby public reports shown within 5 km. Report locations are approximate.";
             else statusNode.textContent = (window.civicI18n?.translate("{{count}} public mapped reports shown. Citizen details and staff notes are omitted.") || "{{count}} public mapped reports shown. Citizen details and staff notes are omitted.").replace("{{count}}", String(reports.length));
         }
+        if (which === "main") renderPublicReportCards(reports, map);
         const locations = new Map();
         reports.forEach(report => {
             const key = report.latitude + "," + report.longitude;
@@ -326,10 +396,10 @@ async function renderSavedMap(which) {
             locations.get(key).push(report);
         });
         let markerIndex = 0, activeMarker = null;
-        for (const reportsAtLocation of locations.values()) reportsAtLocation.forEach(report => {
+        for (const reportsAtLocation of locations.values()) reportsAtLocation.forEach((report, locationIndex) => {
             let point = [report.latitude, report.longitude];
             if (reportsAtLocation.length > 1) {
-                const center = map.latLngToLayerPoint(point), angle = index * 2 * Math.PI / reportsAtLocation.length;
+                const center = map.latLngToLayerPoint(point), angle = locationIndex * 2 * Math.PI / reportsAtLocation.length;
                 const spread = Math.min(24, 12 + reportsAtLocation.length * 2);
                 point = map.layerPointToLatLng([center.x + Math.cos(angle) * spread, center.y + Math.sin(angle) * spread]);
             }
@@ -347,11 +417,29 @@ async function renderSavedMap(which) {
         if (reports.length && !maps[which + "HasFit"]) { map.fitBounds(window.L.latLngBounds(reports.map(report => [report.latitude, report.longitude])).pad(.15), { maxZoom: 14 }); maps[which + "HasFit"] = true; }
     } catch (error) { if (statusNode) statusNode.textContent = window.civicI18n?.translate(error.message) || error.message; }
 }
-const ST = ["Add a photo", "Pin the location", "Confirm category", "Done!"];
+function renderPublicReportCards(reports, map) {
+    const list = $("#nearbyIssueList"); if (!list) return;
+    const selected = $("#selectedMapReport"); if (selected) { selected.hidden = true; selected.replaceChildren(); }
+    if (!reports.length) { list.innerHTML = '<p class="mut">No public reports match the current filters or nearby area.</p>'; return; }
+    list.innerHTML = reports.slice(0, 40).map((report, i) => {
+        const image = CAT_IMAGES[report.category?.slug] || CAT_IMAGES.other;
+        const status = tr(publicStatusName(report.status));
+        const distance = nearbyCenter ? `<span>${(distanceMeters(nearbyCenter, report) / 1000).toFixed(1)} km away</span>` : "";
+        return `<button class="public-report-card" type="button" data-report-index="${i}"><img src="${esc(image)}" alt="Illustrative ${esc(report.category?.label || "civic issue")} category image" loading="lazy"><span class="public-report-copy"><strong>${esc(report.category?.label || "Civic issue")}</strong><span>${esc(report.ticketId)} · ${esc(status)}</span><span>${new Date(report.createdAt).toLocaleString("en-IN", { dateStyle: "medium" })} ${distance}</span><small>Category illustration, not the submitted report photo</small></span></button>`;
+    }).join("");
+    list.querySelectorAll("[data-report-index]").forEach(button => button.addEventListener("click", () => {
+        const report = reports[Number(button.dataset.reportIndex)];
+        if (!report) return;
+        map.setView([report.latitude, report.longitude], Math.max(map.getZoom(), 16));
+        showMapReport(report, "main");
+    }));
+}
+const ST = ["Choose category", "Describe and photograph the issue", "Pin the location", "Done!"];
 function wiz(n) {
     if (n !== 1) stopCameraStream();
     R.step = n; $("#steps").innerHTML = [1, 2, 3].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join(""); $("#stepT").textContent = n < 4 ? `Step ${n} of 3 · ${ST[n - 1]}` : "Ticket created";[1, 2, 3, 4].forEach(i => $("#s" + i).hidden = i != n); $("#wizBtns").style.display = n == 4 ? "none" : "flex"; $("#back").style.visibility = n == 1 ? "hidden" : "visible"; $("#next").textContent = n == 3 ? "Submit" : "Next";
-    if (n == 2) { drawMap("#pickMap", 1); dupCheck() } if (n == 3) { catPick(); $("#sugg").textContent = "Suggested: " + cat(R.cat)[2] + " (you can change it)" }
+    if (n == 1) catPick();
+    if (n == 3) { drawMap("#pickMap", 1); dupCheck() }
 }
 async function dupCheck() {
     const request = ++suggestionRequest;
@@ -364,9 +452,27 @@ async function dupCheck() {
         const suggestions = payload.suggestions || [];
         if (!suggestions.length) { $("#dupBox").innerHTML = '<p class="mut">No recent open ' + esc(cat(R.cat)[2]) + ' reports found within ' + payload.radiusMeters + ' m. You can continue with a separate report.</p>'; return; }
         let html = '<div class="duplicate-box"><h4>Similar nearby reports</h4><p class="mut">Same category, within ' + payload.radiusMeters + ' m and the previous ' + payload.lookbackDays + ' days. Suggestions never merge reports.</p>';
-        suggestions.forEach(item => { const distance = item.distanceMeters < 1000 ? item.distanceMeters + " m" : (item.distanceMeters / 1000).toFixed(1) + " km"; html += '<div class="duplicate-row"><b>' + esc(item.ticketId) + '</b><span>' + esc(item.category.label) + ' · ' + esc(item.status.replaceAll("_", " ")) + '</span><span>About ' + distance + ' away</span><button class="btn line duplicate-open" data-ticket="' + esc(item.ticketId) + '">View public ticket</button></div>'; });
+        suggestions.forEach(item => { const distance = item.distanceMeters < 1000 ? item.distanceMeters + " m" : (item.distanceMeters / 1000).toFixed(1) + " km"; html += '<div class="duplicate-row"><b>' + esc(item.ticketId) + '</b><span>' + esc(item.category.label) + ' · ' + esc(item.status.replaceAll("_", " ")) + '</span><span>About ' + distance + ' away · ' + item.supportCount + ' support</span><button class="btn rust duplicate-support" data-ticket="' + esc(item.ticketId) + '"' + (item.supportedByMe ? ' disabled' : '') + '>' + (item.supportedByMe ? 'Supported' : '+1 Support this issue') + '</button><button class="btn line duplicate-open" data-ticket="' + esc(item.ticketId) + '">View public ticket</button></div>'; });
         $("#dupBox").innerHTML = html + '<p class="mut">Still reporting a separate issue? Continue below; nothing will be merged.</p></div>';
         $$(".duplicate-open").forEach(button => button.onclick = () => trackSavedComplaint(button.dataset.ticket));
+        $$(".duplicate-support").forEach(button => button.onclick = async () => {
+            button.disabled = true;
+            try {
+                const response = await fetch(`/api/complaints/${encodeURIComponent(button.dataset.ticket)}/support`, { method: "POST" });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error?.message || "Could not support this issue.");
+                const existingTicket = payload.ticketId;
+                $("#tkId").textContent = existingTicket;
+                $("#tkDue").textContent = "You supported an existing public issue. No new report was created.";
+                $("#tkPriority").textContent = "";
+                $("#tkStatus").textContent = `Status: ${payload.status.replaceAll("_", " ")} · ${payload.supportCount} citizen support`;
+                $("#tkGo").onclick = () => trackSavedComplaint(existingTicket);
+                mkQR(existingTicket);
+                wiz(4);
+                $("#stepT").textContent = "Existing issue supported";
+                toast("Support added to " + existingTicket);
+            } catch (error) { button.disabled = false; toast(error.message); }
+        });
     } catch (error) { if (request === suggestionRequest) $("#dupBox").innerHTML = '<p class="form-error" role="alert">' + esc(error.message) + ' You can continue reporting.</p>'; }
 }
 $("#catPick").addEventListener("click", event => { if (event.target.closest(".cat")) setTimeout(dupCheck, 0); });
@@ -389,7 +495,8 @@ $("#cameraStart").onclick = async () => {
         const location = await requestDeviceLocation();
         R.latitude = location.latitude; R.longitude = location.longitude;
         $("#manualLat").value = location.latitude.toFixed(6); $("#manualLng").value = location.longitude.toFixed(6);
-        $("#locationStatus").textContent = "Your current location is ready to use as the report pin. You can adjust it on the map.";
+        const accuracy = Number.isFinite(location.accuracy) ? Math.round(location.accuracy) : null;
+        $("#locationStatus").textContent = `Blue dot: current GPS estimate${accuracy !== null ? `; blue circle: reported uncertainty of about ${accuracy} m` : ""}. Orange circle: the 50 m pin adjustment limit. ${accuracy !== null && accuracy > 50 ? "GPS is less precise than the allowed pin radius; enable precise location on your device for a more reliable fix." : "Adjust the pin inside the orange circle if needed."}`;
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("Live camera capture requires a secure connection and a supported browser. You can continue and choose a map pin manually.");
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
         video.srcObject = cameraStream; video.hidden = false; $("#photoPreview").hidden = true;
@@ -397,7 +504,7 @@ $("#cameraStart").onclick = async () => {
         notice.textContent = "Camera ready. Take a live photo to continue. The photo will be attached privately when you submit.";
     } catch (error) {
         stopCameraStream(); notice.textContent = error.message; toast(error.message);
-    } finally { startButton.disabled = false; startButton.textContent = "📍 Allow location & open camera"; }
+    } finally { startButton.disabled = false; startButton.textContent = tr("📍 Allow location & open camera"); }
 };
 $("#capturePhoto").onclick = () => {
     const video = $("#cameraPreview"), canvas = document.createElement("canvas");
@@ -411,36 +518,80 @@ $("#capturePhoto").onclick = () => {
         reportPhoto = blob; reportPhotoUrl = URL.createObjectURL(blob);
         $("#photoPreview").src = reportPhotoUrl; $("#photoPreview").hidden = false;
         $("#capturePhoto").hidden = true; $("#cameraStart").hidden = false; $("#cameraStart").textContent = "📷 Retake live photo";
-        $("#photoNotice").textContent = "Live photo captured. It will be attached privately when you submit this report.";
+        $("#photoNotice").textContent = tr("Live photo captured. It will be attached privately when you submit this report.");
     }, "image/jpeg", .82);
     stopCameraStream();
 };
-$("#desc").oninput = e => { R.cat = guess(e.target.value); if (R.step === 3) { catPick(); dupCheck(); } };
-$("#mic").onclick = () => { const S = window.SpeechRecognition || window.webkitSpeechRecognition; if (!S) return toast("Voice input not supported in this browser"); const r = new S(); r.onresult = e => { $("#desc").value = e.results[0][0].transcript; R.cat = guess($("#desc").value) }; r.start(); toast("Listeningâ€¦") };
+$("#desc").oninput = () => {};
+let speechRecognition = null, speechActive = false, speechText = "", speechTimer = 0, speechCountdown = 0;
+function stopVoiceInput(message = "Voice input stopped.") {
+    speechActive = false; clearTimeout(speechTimer); clearInterval(speechCountdown);
+    try { speechRecognition?.stop(); } catch {}
+    speechRecognition = null;
+    const button = $("#mic"), status = $("#voiceStatus");
+    button.textContent = "🎤 Start voice input"; button.setAttribute("aria-pressed", "false");
+    $("#voiceContinue").hidden = true; status.hidden = false; status.textContent = message;
+}
+function voiceTimerReset() {
+    clearTimeout(speechTimer); clearInterval(speechCountdown); $("#voiceContinue").hidden = true;
+    $("#voiceStatus").textContent = "Listening. Press Stop voice input when you are finished.";
+    speechTimer = setTimeout(() => {
+        let seconds = 5; const continueButton = $("#voiceContinue"), status = $("#voiceStatus");
+        continueButton.hidden = false; status.textContent = `Voice input will stop in ${seconds} seconds. Press Continue speaking to keep going.`;
+        speechCountdown = setInterval(() => {
+            seconds -= 1;
+            if (seconds <= 0) stopVoiceInput("Voice input stopped after the time limit.");
+            else status.textContent = `Voice input will stop in ${seconds} seconds. Press Continue speaking to keep going.`;
+        }, 1000);
+    }, 55000);
+}
+$("#mic").onclick = () => {
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Speech) { $("#voiceStatus").hidden = false; $("#voiceStatus").textContent = "Voice input is not supported in this browser. Type your description instead."; return; }
+    if (speechActive) return stopVoiceInput("Voice input stopped. You can edit the text or start again.");
+    speechRecognition = new Speech(); speechRecognition.continuous = true; speechRecognition.interimResults = true;
+    speechRecognition.lang = ({ hi: "hi-IN", pa: "pa-IN" })[window.CIVIC_LANGUAGE] || "en-IN";
+    speechText = ""; speechActive = true;
+    const button = $("#mic"), status = $("#voiceStatus"); button.textContent = "■ Stop voice input"; button.setAttribute("aria-pressed", "true"); status.hidden = false;
+    speechRecognition.onresult = event => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const text = event.results[i][0].transcript;
+            if (event.results[i].isFinal) speechText += text + " "; else interim += text;
+        }
+        $("#desc").value = (speechText + interim).trim(); voiceTimerReset();
+    };
+    speechRecognition.onerror = event => { if (event.error !== "no-speech" && event.error !== "aborted") stopVoiceInput("Voice input error: " + event.error + ". You can type your description or try again."); };
+    speechRecognition.onend = () => { if (speechActive) { try { speechRecognition.start(); } catch {} } };
+    try { speechRecognition.start(); voiceTimerReset(); } catch { stopVoiceInput("Could not start voice input. Check microphone permission and try again."); }
+};
+$("#voiceContinue").onclick = () => { if (!speechActive) return; voiceTimerReset(); try { speechRecognition?.start(); } catch {} };
 $("#back").onclick = () => wiz(R.step - 1);
 let savingComplaint = false;
 $("#next").onclick = async () => {
     if (savingComplaint) return;
     if (R.step === 1) {
-        if (!reportPhoto) {
-            $("#photoNotice").textContent = "Take a live photo before continuing. Your report needs a photo and a location pin.";
-            $("#cameraStart").focus();
-            toast("Take a live photo before continuing.");
-            return;
-        }
-        const nextButton = $("#next");
-        nextButton.disabled = true;
-        try {
-            const location = await requestDeviceLocation();
-            setReportLocation(location.latitude, location.longitude, false);
-            wiz(2);
-        } catch (error) {
-            $("#locationStatus").textContent = error.message;
-            toast(error.message);
-        } finally { nextButton.disabled = false; }
+        wiz(2);
         return;
     }
-    if (R.step == 2 && (R.latitude === null || R.longitude === null)) return toast("Allow location access to set the issue pin before continuing.");
+    if (R.step === 2) {
+        const nextButton = $("#next");
+        if (!reportPhoto) { $("#photoNotice").textContent = "Take a live photo before continuing."; $("#cameraStart").focus(); return; }
+        nextButton.disabled = true; nextButton.textContent = "Checking report…";
+        try {
+            const form = new FormData(); form.append("file", reportPhoto, "report-photo.jpg");
+            const params = new URLSearchParams({ title: $("#title").value.trim(), description: $("#desc").value.trim(), category: cat(R.cat)[2] });
+            const response = await fetch(`/api/complaints/validate-content?${params}`, { method: "POST", body: form });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error?.message || "Could not review this report. Try again.");
+            await reportReviewPopup(true, "The selected category, description, and photo appear relevant.");
+            wiz(3);
+        } catch (error) {
+            await reportReviewPopup(false, error.message + " Change the photo or report details, then try again.");
+        } finally { nextButton.disabled = false; nextButton.textContent = "Next"; }
+        return;
+    }
+    if (R.step == 3 && (R.latitude === null || R.longitude === null)) return toast("Allow location access to set the issue pin before continuing.");
     if (R.step === 3 && !reportPhoto) {
         $("#formError").textContent = "A live photo is required before you can submit this report.";
         toast("Take a live photo before submitting.");
@@ -456,12 +607,20 @@ $("#next").onclick = async () => {
     submitButton.textContent = "Savingâ€¦";
     formError.textContent = "";
     try {
+        const reportTitle = $("#title").value.trim();
+        const reportDescription = $("#desc").value.trim();
+        const reviewForm = new FormData();
+        reviewForm.append("file", reportPhoto, "report-photo.jpg");
+        const reviewParams = new URLSearchParams({ title: reportTitle, description: reportDescription, category: c[2] });
+        const reviewResponse = await fetch(`/api/complaints/validate-content?${reviewParams}`, { method: "POST", body: reviewForm });
+        const reviewPayload = await reviewResponse.json().catch(() => ({}));
+        if (!reviewResponse.ok) throw new Error(reviewPayload.error?.message || "The report could not be checked. Please try again.");
         const response = await fetch("/api/complaints", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                title: $("#title").value.trim(),
-                description: $("#desc").value.trim(),
+                title: reportTitle,
+                description: reportDescription,
                 category: R.cat,
                 language: window.CIVIC_LANGUAGE || "en",
                 location: { latitude: R.latitude, longitude: R.longitude }
@@ -494,7 +653,7 @@ $("#next").onclick = async () => {
         $("#tkGo").onclick = () => trackSavedComplaint(complaint.ticketId);
         mkQR(complaint.ticketId);
         if (reportPhotoUrl) URL.revokeObjectURL(reportPhotoUrl);
-        reportPhoto = null; reportPhotoUrl = null; $("#photoPreview").removeAttribute("src"); $("#photoPreview").hidden = true; $("#cameraStart").hidden = false; $("#cameraStart").textContent = "📍 Allow location & open camera"; $("#capturePhoto").hidden = true; $("#photoNotice").textContent = "A live photo and your location are required to submit this report. Photos are attached privately.";
+        reportPhoto = null; reportPhotoUrl = null; $("#photoPreview").removeAttribute("src"); $("#photoPreview").hidden = true; $("#cameraStart").hidden = false; $("#cameraStart").textContent = tr("📍 Allow location & open camera"); $("#capturePhoto").hidden = true; $("#photoNotice").textContent = tr("A live photo and your location are required to submit this report. Photos are attached privately.");
         R = { step: 1, cat: "roads", latitude: null, longitude: null };
         if (selectedMarker && maps.pick) maps.pick.removeLayer(selectedMarker);
         selectedMarker = null;
@@ -595,7 +754,16 @@ async function mine() {
         $("#mine").innerHTML = complaints.length ? complaints.map(c => `<div class="card" style="margin-bottom:12px"><div class="row" style="justify-content:space-between"><b>${esc(c.ticketId)} · ${esc(c.title)}</b><span>${esc(c.status.replaceAll("_", " "))}</span></div><p class="mut">${esc(c.category.label)} · ${esc(c.department.name)}</p><button class="btn line" onclick="trackSavedComplaint('${esc(c.ticketId)}')">View status</button></div>`).join("") : '<div class="card" style="text-align:center;padding:40px"><div style="font-size:46px">ðŸ“­</div><p class="mut">No reports yet.</p><button class="btn rust" onclick="go(\'report\')">Report a problem</button></div>';
     } catch (error) { $("#mine").innerHTML = `<p class="card" role="alert">${esc(error.message)}</p>`; }
 }
-function wards() { const w = []; for (let i = 1; i <= 12; i++) { const a = T.filter(t => t.ward == i); const od = a.filter(t => t.st < 3 && left(t) < 0).length; w.push([i, a.length ? Math.round(100 - od / a.length * 100) : 100, a.length]) } w.sort((a, b) => b[1] - a[1]); $("#wards").innerHTML = w.map((x, i) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"][i] || i + 1 + "."} Ward ${x[0]}</b><span>${x[1]}% on time · ${x[2]} issues</span></div><div class="meter"><i style="width:${x[1]}%;background:${x[1] > 80 ? "var(--green)" : x[1] > 50 ? "var(--amber)" : "var(--red)"}"></i></div></div>`).join("") }
+
+function profile() {
+    if (currentUser?.role !== "citizen") return;
+    $("#profileName").textContent = currentUser.name || "—";
+    $("#profileEmail").textContent = currentUser.email || "—";
+    $("#profileRole").textContent = "Citizen";
+}
+$("#profileReports").onclick = () => go("mine");
+
+function wards() { const w = []; for (let i = 1; i <= 12; i++) { const a = T.filter(t => t.ward == i); const od = a.filter(t => t.st < 3 && left(t) < 0).length; w.push([i, a.length ? Math.round(100 - od / a.length * 100) : 100, a.length]) } w.sort((a, b) => b[1] - a[1]); $("#wards").innerHTML = w.map((x, i) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${i + 1}. Ward ${x[0]}</b><span>${x[1]}% on time · ${x[2]} issues</span></div><div class="meter"><i style="width:${x[1]}%;background:${x[1] > 80 ? "var(--green)" : x[1] > 50 ? "var(--amber)" : "var(--red)"}"></i></div></div>`).join("") }
 /* DEPARTMENT OPERATIONS DASHBOARD */
 const DUE_SOON_WINDOW_MS = 4 * 60 * 60 * 1000;
 const DASHBOARD_ACTIONABLE = new Set(["assigned", "in_progress", "reopened"]);
@@ -1064,7 +1232,7 @@ if (splash) {
     }, reduceStartupMotion ? 0 : 90);
 } else releaseLandingIntro();
 const mkQR = id => { const q = $("#qr"); q.innerHTML = ""; if (window.QRCode) new QRCode(q, { text: "LOGICLOOPS-TICKET-" + id, width: 120, height: 120 }); else q.textContent = "Ticket " + id; $("#prt").onclick = () => print() };
-const N = [{ txt: "ðŸ‘‹ Welcome! Updates on your reports appear here.", t: Date.now() }]; let unread = 1;
+const N = [{ txt: "● Welcome! Updates on your reports appear here.", t: Date.now() }]; let unread = 1;
 const bnUpd = () => { const b = $("#bn"); b.textContent = unread; b.classList.toggle("z", !unread) };
 const notify = (txt, id) => { N.unshift({ txt, id, t: now() }); unread++; bnUpd(); const b = $("#bell"); b.classList.remove("ring"); void b.offsetWidth; b.classList.add("ring") };
 $("#bellB").onclick = e => { e.stopPropagation(); const p = $("#bellP"); p.innerHTML = N.slice(0, 12).map((n, i) => `<div data-n="${i}">${n.txt}<small>${fmt(now() - n.t)} ago</small></div>`).join(""); p.classList.toggle("on"); unread = 0; bnUpd() };

@@ -5,7 +5,7 @@ const { normalizeComplaintInput } = require("../validation/complaints");
 const { requireRoles } = require("../auth");
 const { CATEGORIES } = require("../validation/complaints");
 const { createRateLimiter } = require("../rate-limit");
-const { assessPriority } = require("../priority");
+const { assessPriority, reviewReportContent } = require("../priority");
 
 const DEFAULT_RADIUS_METERS = 1000;
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -142,12 +142,36 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
                     AND c.longitude BETWEEN $3::double precision-($4::double precision/(111320*GREATEST(abs(cos(radians($2::double precision))),0.01)))
                         AND $3::double precision+($4::double precision/(111320*GREATEST(abs(cos(radians($2::double precision))),0.01)))
             )
-            SELECT ticket_id,status,due_at,created_at,category_slug,category_label,round(distance_meters)::int AS distance_meters
-            FROM candidates WHERE distance_meters <= $4 ORDER BY distance_meters,created_at DESC LIMIT 8`,
-            [category, latitude, longitude, radiusMeters, lookbackDays]);
+            SELECT candidates.ticket_id,candidates.status,candidates.due_at,candidates.created_at,candidates.category_slug,candidates.category_label,
+                round(candidates.distance_meters)::int AS distance_meters, count(s.user_id)::int AS support_count,
+                bool_or(s.user_id=$6::bigint) AS supported_by_me
+            FROM candidates LEFT JOIN complaint_support s ON s.complaint_id=(SELECT id FROM complaints WHERE ticket_id=candidates.ticket_id)
+            WHERE candidates.distance_meters <= $4 GROUP BY candidates.ticket_id,candidates.status,candidates.due_at,candidates.created_at,candidates.category_slug,candidates.category_label,candidates.distance_meters
+            ORDER BY candidates.distance_meters,candidates.created_at DESC LIMIT 8`,
+            [category, latitude, longitude, radiusMeters, lookbackDays, req.user.sub]);
             return res.json({ suggestions: result.rows.map(row => ({ ticketId: row.ticket_id, category: { slug: row.category_slug, label: row.category_label },
-                status: row.status, distanceMeters: row.distance_meters, createdAt: row.created_at, dueAt: row.due_at })),
+                status: row.status, distanceMeters: row.distance_meters, createdAt: row.created_at, dueAt: row.due_at,
+                supportCount: row.support_count, supportedByMe: row.supported_by_me === true })),
                 radiusMeters, lookbackDays, note: "Suggestions are separate reports. They are never merged automatically." });
+        } catch (error) { return next(error); }
+    });
+
+    router.post("/:ticketId/support", authenticate, requireRoles("citizen"), async (req, res, next) => {
+        const ticketId = req.params.ticketId.trim().toUpperCase();
+        if (!/^CIV-[A-F0-9]{16}$/.test(ticketId)) return res.status(400).json({ error: { code: "INVALID_TICKET_ID", message: "Invalid ticket ID." } });
+        try {
+            const result = await pool.query(`WITH target AS (
+                SELECT id,ticket_id,status FROM complaints WHERE ticket_id=$1 AND status <> 'closed'
+            ), added AS (
+                INSERT INTO complaint_support (complaint_id,user_id)
+                SELECT id,$2 FROM target ON CONFLICT (complaint_id,user_id) DO NOTHING RETURNING complaint_id
+            )
+            SELECT target.ticket_id,target.status,(SELECT count(*)::int FROM complaint_support WHERE complaint_id=target.id) AS support_count,
+                EXISTS (SELECT 1 FROM complaint_support WHERE complaint_id=target.id AND user_id=$2) AS supported_by_me
+            FROM target`, [ticketId, req.user.sub]);
+            if (!result.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No open complaint was found for that ticket ID.");
+            return res.json({ ticketId: result.rows[0].ticket_id, status: result.rows[0].status,
+                supportCount: result.rows[0].support_count, supportedByMe: result.rows[0].supported_by_me });
         } catch (error) { return next(error); }
     });
 
@@ -175,17 +199,31 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
         } catch (error) { return next(error); }
     });
 
+    router.post("/validate-content", authenticate, requireRoles("citizen"), express.raw({ type: "multipart/form-data", limit: "5.2mb" }), async (req, res, next) => {
+        try {
+            const file = parseMultipart(req);
+            const result = await reviewReportContent({ title: req.query.title, description: req.query.description, category: req.query.category, image: file.buffer, mimeType: file.mimeType });
+            if (!result.available) throw apiError(503, "CONTENT_REVIEW_UNAVAILABLE", "Report review is temporarily unavailable. Please try again shortly.");
+            if (!result.relevant) throw apiError(422, "REPORT_NOT_RELEVANT", result.reason || "The report text and photo do not appear relevant to the selected civic issue.");
+            return res.json({ valid: true });
+        } catch (error) { return next(error); }
+    });
+
     router.post("/:ticketId/photo", authenticate, requireRoles("citizen"), express.raw({ type: "multipart/form-data", limit: "5.2mb" }), async (req, res, next) => {
         let client, objectKey;
         try {
             if (!/^CIV-[A-F0-9]{16}$/i.test(req.params.ticketId.trim())) throw apiError(400, "INVALID_TICKET_ID", "Invalid ticket ID.");
             const file = parseMultipart(req);
             client = await pool.connect(); await client.query("BEGIN");
-            const found = await client.query("SELECT id,user_id,status FROM complaints WHERE ticket_id=$1 FOR UPDATE", [req.params.ticketId.trim().toUpperCase()]);
+            const found = await client.query("SELECT id,user_id,status,title,description FROM complaints WHERE ticket_id=$1 FOR UPDATE", [req.params.ticketId.trim().toUpperCase()]);
             if (!found.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No saved complaint was found for that ticket ID.");
             const complaint = found.rows[0];
             if (String(complaint.user_id) !== req.user.sub) throw apiError(403, "FORBIDDEN", "Only the citizen who submitted this complaint may attach its report photo.");
             if (complaint.status !== "assigned") throw apiError(409, "INVALID_PHOTO_STATE", "A report photo can only be attached before department work begins.");
+            const category = await client.query("SELECT label FROM issue_categories WHERE id=(SELECT category_id FROM complaints WHERE id=$1)", [complaint.id]);
+            const contentReview = await reviewReportContent({ title: complaint.title, description: complaint.description, category: category.rows[0]?.label, image: file.buffer, mimeType: file.mimeType });
+            if (!contentReview.available) throw apiError(503, "CONTENT_REVIEW_UNAVAILABLE", "Photo review is temporarily unavailable. Please try again shortly.");
+            if (!contentReview.relevant) throw apiError(422, "PHOTO_NOT_RELEVANT", contentReview.reason || "This photo does not appear to show the reported civic issue.");
             objectKey = await storage.put(file.buffer, file.extension);
             const inserted = await client.query(
                 `INSERT INTO complaint_media (complaint_id,uploader_user_id,object_key,original_name,mime_type,byte_size,media_kind)
@@ -224,6 +262,9 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
             }
 
             const mapping = categoryResult.rows[0];
+            const textReview = await reviewReportContent({ title, description, category: mapping.label });
+            if (!textReview.available) throw apiError(503, "CONTENT_REVIEW_UNAVAILABLE", "Report review is temporarily unavailable. Please try again shortly.");
+            if (!textReview.relevant) throw apiError(422, "REPORT_NOT_RELEVANT", textReview.reason || "The report text does not appear relevant to the selected civic issue.");
             const language = ["en", "hi", "pa"].includes(req.body?.language) ? req.body.language : "en";
             const priority = await assessPriority({ title, description, category: mapping.label, language });
             client = await pool.connect();
