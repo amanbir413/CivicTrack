@@ -375,7 +375,7 @@ async function publicMapData(category, status) {
         mapDataCache.set(key, { expires: Date.now() + 15000, promise });
         throw error;
     }
-}async function renderSavedMap(which) {
+} async function renderSavedMap(which) {
     const map = maps[which]; if (!map) return;
     const statusNode = $(which === "home" ? "#homeMapMessage" : which === "explore" ? "#exploreMapMessage" : "#mapMessage");
     if (statusNode) statusNode.textContent = "Loading public reportsâ€¦";
@@ -536,11 +536,11 @@ $("#capturePhoto").onclick = () => {
     }, "image/jpeg", .82);
     stopCameraStream();
 };
-$("#desc").oninput = () => {};
+$("#desc").oninput = () => { };
 let speechRecognition = null, speechActive = false, speechText = "", speechTimer = 0, speechCountdown = 0;
 function stopVoiceInput(message = "Voice input stopped.") {
     speechActive = false; clearTimeout(speechTimer); clearInterval(speechCountdown);
-    try { speechRecognition?.stop(); } catch {}
+    try { speechRecognition?.stop(); } catch { }
     speechRecognition = null;
     const button = $("#mic"), status = $("#voiceStatus");
     button.textContent = "🎤 Start voice input"; button.setAttribute("aria-pressed", "false");
@@ -576,10 +576,10 @@ $("#mic").onclick = () => {
         $("#desc").value = (speechText + interim).trim(); voiceTimerReset();
     };
     speechRecognition.onerror = event => { if (event.error !== "no-speech" && event.error !== "aborted") stopVoiceInput("Voice input error: " + event.error + ". You can type your description or try again."); };
-    speechRecognition.onend = () => { if (speechActive) { try { speechRecognition.start(); } catch {} } };
+    speechRecognition.onend = () => { if (speechActive) { try { speechRecognition.start(); } catch { } } };
     try { speechRecognition.start(); voiceTimerReset(); } catch { stopVoiceInput("Could not start voice input. Check microphone permission and try again."); }
 };
-$("#voiceContinue").onclick = () => { if (!speechActive) return; voiceTimerReset(); try { speechRecognition?.start(); } catch {} };
+$("#voiceContinue").onclick = () => { if (!speechActive) return; voiceTimerReset(); try { speechRecognition?.start(); } catch { } };
 $("#back").onclick = () => wiz(R.step - 1);
 let savingComplaint = false;
 $("#next").onclick = async () => {
@@ -690,6 +690,7 @@ $("#next").onclick = async () => {
 /* TRACK */
 let cur = null; function openT(id) { go("track"); $("#tid").value = id; showT(id) }
 function showT(id, quiet) {
+    currentSavedComplaintForShare = null;
     const t = T.find(x => x.id == id); cur = id; if (!t) return $("#tview").innerHTML = '<p class="card" style="max-width:640px;margin:14px auto">Ticket not found.</p>';
     const pend = t.st < 3 ? `<div class="pend">${t.lv < 3 ? "Escalation if overdue" : "Public critical flag"}</div><div class="pend">Resolved + proof</div>` : "";
     $("#tview").innerHTML = `<p class="mut">Illustrative browser-only demo ticket; this record is not saved in PostgreSQL.</p><div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">#${t.id} · ${cat(t.c)[1]} ${t.title} · Ward ${t.ward}</h3><div>${stTag(t)} <b>${dueTxt(t)}</b></div></div></div>
@@ -697,7 +698,9 @@ function showT(id, quiet) {
  <div class="card"><h3>Responsible officer</h3><p><b>${LV[t.lv]}</b> · ${cat(t.c)[3]}</p><h3>Escalation ladder</h3><div class="lad">${LV.map((l, i) => `<span class="${i == t.lv && t.st < 3 ? "on" : i < t.lv || t.st >= 3 ? "done" : ""}">L${i}</span>`).join("")}</div><p class="mut">Now: ${LV[t.lv]} · next: ${LV[t.lv + 1] || "Public flag"}</p><h3>Photos</h3><div class="row" style="flex-wrap:nowrap"><div style="flex:1">${ph(t.c, 0)}</div><div style="flex:1">${t.st >= 3 ? ph(t.c, 1) : '<div class="mut" style="height:100%;min-height:80px;border-radius:10px;background:var(--line);display:grid;place-items:center">After: pending</div>'}</div></div>
  ${t.st >= 3 && !t.ok ? `<h3>Is this fixed?</h3><div class="row"><button class="btn grn" onclick="confirmT(${t.id})">Yes, confirm</button><button class="btn rust" onclick="reopen(${t.id})">Reopen</button></div>` : t.ok ? "<p>âœ… Closed â€” thank you!</p>" : ""}</div></div>`
 }
+let currentSavedComplaintForShare = null;
 function renderSavedComplaint(complaint) {
+    currentSavedComplaintForShare = complaint;
     cur = null;
     const status = String(complaint.status).replaceAll("_", " ");
     const events = complaint.events.map(event => {
@@ -725,8 +728,169 @@ function renderSavedComplaint(complaint) {
             ? `<section class="case-feedback"><h3>Your feedback for ${esc(complaint.feedback.officerName || "the officer")}</h3><p class="case-feedback-stars" aria-label="${complaint.feedback.rating} out of 5 stars">${"★".repeat(complaint.feedback.rating)}${"☆".repeat(5 - complaint.feedback.rating)} <span>${complaint.feedback.rating}/5</span></p>${complaint.feedback.comment ? `<p>${esc(complaint.feedback.comment)}</p>` : ""}<p class="mut">Thanks. This rating is linked to your confirmed report.</p></section>`
             : `<section class="case-feedback"><h3>Rate ${esc(complaint.resolvedByName || "the officer who handled this report")}</h3><p class="mut">Share feedback on communication, transparency, and the confirmed fix. One rating is allowed per closed report.</p><label for="officerFeedbackRating">Your rating</label><select id="officerFeedbackRating"><option value="5">5 — Excellent</option><option value="4">4 — Good</option><option value="3">3 — Fair</option><option value="2">2 — Poor</option><option value="1">1 — Very poor</option></select><label for="officerFeedbackComment">Optional comment</label><textarea id="officerFeedbackComment" maxlength="500" rows="3" placeholder="Describe your experience"></textarea><button type="button" class="btn rust" data-submit-feedback="${esc(complaint.ticketId)}">Submit feedback</button><p class="mut" data-feedback-message role="status"></p></section>`
         : "";
-    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}${feedbackControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
+    const shareableStatus = complaint.isEscalated && ["assigned", "in_progress", "reopened"].includes(complaint.status);
+    const shareControls = shareableStatus ? `<section class="escalation-share-card" aria-labelledby="shareIssueTitle">
+        <div><p class="eyebrow">${esc(tr("PUBLIC FOLLOW-UP"))}</p><h3 id="shareIssueTitle">${esc(tr("Still unresolved after escalation?"))}</h3>
+        <p class="mut">${esc(tr("Create a factual status video with the public ticket link. It leaves out your identity, private report details, exact location, and staff names."))}</p></div>
+        <button type="button" class="btn rust" data-share-issue="${esc(complaint.ticketId)}">${esc(tr("Create share video"))}</button>
+    </section>` : "";
+    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${shareControls}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}${feedbackControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
 }
+
+/* Public escalation updates: generated locally, with no private report data or staff names. */
+let activeShareReport = null, generatedShareFile = null, generatedShareUrl = null, selectedIssueVideo = null, selectedIssueVideoUrl = null, shareRecorder = null;
+const shareDialog = $("#escalationShareDialog");
+function createShareLink(ticketId) {
+    const url = new URL(location.pathname || "/", location.origin);
+    url.searchParams.set("ticket", ticketId);
+    return url.href;
+}
+function shareCaption(report) {
+    const category = tr(report.category?.label || "civic issue");
+    return `${tr("Civic service follow-up needed")}: ${category} report ${report.ticketId} remains unresolved after an SLA escalation. View its public status: ${createShareLink(report.ticketId)}`;
+}
+function wrapCanvasText(context, value, x, y, maxWidth, lineHeight, maxLines = 3) {
+    const words = String(value || "").split(/\s+/);
+    let line = "", lines = [];
+    for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && context.measureText(candidate).width > maxWidth) { lines.push(line); line = word; }
+        else line = candidate;
+    }
+    if (line) lines.push(line);
+    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = `${lines[maxLines - 1].replace(/[.,;:]?$/, "…")}`; }
+    lines.forEach((text, index) => context.fillText(text, x, y + index * lineHeight));
+    return lines.length * lineHeight;
+}
+function drawShareVideoFrame(context, canvas, report, progress = 0) {
+    const width = canvas.width, height = canvas.height;
+    const gradient = context.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, "#102c27"); gradient.addColorStop(0.58, "#14202d"); gradient.addColorStop(1, "#263b43");
+    context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+    context.fillStyle = "rgba(255,255,255,.045)";
+    for (let i = 0; i < 7; i++) context.fillRect(0, 222 + i * 132, width, 1);
+    context.fillStyle = "#f1a978"; context.fillRect(56, 78, 12, 50);
+    context.textAlign = "left"; context.fillStyle = "#f4f7f3"; context.font = "700 35px Arial, sans-serif";
+    context.fillText("CivicTrack", 88, 116);
+    context.fillStyle = "#c8d5dc"; context.font = "600 18px Arial, sans-serif"; context.letterSpacing = "2px";
+    context.fillText(tr("PUBLIC SERVICE FOLLOW-UP").toUpperCase(), 58, 222); context.letterSpacing = "0px";
+    context.fillStyle = "#ffffff"; context.font = "700 48px Arial, sans-serif";
+    let y = 314 + wrapCanvasText(context, tr(report.category?.label || "Civic issue"), 58, 314, 604, 58, 2);
+    context.fillStyle = "#f1a978"; context.font = "800 46px Arial, sans-serif"; context.fillText(tr("STILL UNRESOLVED"), 58, y + 72);
+    context.fillStyle = "#e0e8eb"; context.font = "400 26px Arial, sans-serif";
+    y += 152;
+    y += wrapCanvasText(context, tr("An SLA escalation is recorded, and this report remains open."), 58, y, 600, 40, 4);
+    const overdueDays = report.dueAt && Date.now() > new Date(report.dueAt).getTime() ? Math.max(1, Math.floor((Date.now() - new Date(report.dueAt).getTime()) / 86400000)) : 0;
+    context.fillStyle = "#b9c9d1"; context.font = "600 24px Arial, sans-serif";
+    context.fillText(overdueDays ? `${overdueDays} ${tr("days past the target date")}` : tr("Escalation recorded"), 58, y + 70);
+    context.fillStyle = "rgba(255,255,255,.08)"; context.beginPath(); context.roundRect(44, 904, 632, 210, 24); context.fill();
+    context.fillStyle = "#b9c9d1"; context.font = "600 20px Arial, sans-serif"; context.fillText(tr("PUBLIC TICKET"), 74, 960);
+    context.fillStyle = "#ffffff"; context.font = "700 32px Arial, sans-serif"; context.fillText(report.ticketId, 74, 1010);
+    context.fillStyle = "#c8d5dc"; context.font = "400 17px Arial, sans-serif"; wrapCanvasText(context, location.host, 74, 1060, 560, 26, 2);
+    context.fillStyle = "#c8d5dc"; context.font = "400 18px Arial, sans-serif"; wrapCanvasText(context, tr("Issue-focused update · no personal details"), 58, 1180, 600, 26, 2);
+    context.fillStyle = "rgba(255,255,255,.16)"; context.fillRect(58, 1236, 604, 6);
+    context.fillStyle = "#f1a978"; context.fillRect(58, 1236, 604 * Math.max(0, Math.min(1, progress)), 6);
+}
+function openIssueShare(report) {
+    if (!report?.isEscalated || !["assigned", "in_progress", "reopened"].includes(report.status)) return;
+    activeShareReport = { ticketId: report.ticketId, category: report.category, dueAt: report.dueAt, status: report.status };
+    if (generatedShareUrl) URL.revokeObjectURL(generatedShareUrl);
+    generatedShareFile = null; generatedShareUrl = null; selectedIssueVideo = null;
+    if (selectedIssueVideoUrl) URL.revokeObjectURL(selectedIssueVideoUrl);
+    selectedIssueVideoUrl = null;
+    const canvas = $("#shareVideoCanvas"), context = canvas.getContext("2d");
+    drawShareVideoFrame(context, canvas, activeShareReport, 0.08);
+    $("#shareVideoPreview").hidden = true; $("#shareVideoPreview").removeAttribute("src"); canvas.hidden = false;
+    $("#issueVideoFile").value = ""; $("#sharePublicConsent").checked = false;
+    $("#shareVideoStatus").textContent = tr("Create the status video or record/select a clip. Videos stay on this device until you choose to share them.");
+    $("#downloadIssueVideo").hidden = true; $("#shareIssueVideo").hidden = true; $("#shareFacebook").hidden = true; $("#shareX").hidden = true; $("#copyShareCaption").hidden = true;
+    window.civicI18n?.localize(shareDialog);
+    if (!shareDialog.open) shareDialog.showModal();
+}
+function downloadShareFile(file) {
+    const url = selectedIssueVideoUrl || generatedShareUrl || (selectedIssueVideoUrl = URL.createObjectURL(file));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = file.name || `civictrack-${activeShareReport.ticketId}.video`; anchor.click();
+}
+function finishShareVideo(blob) {
+    if (!blob?.size || blob.size > 25 * 1024 * 1024) { $("#shareVideoStatus").textContent = tr("The video could not be prepared or is too large to share."); return; }
+    const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+    generatedShareFile = new File([blob], `civictrack-${activeShareReport.ticketId}.${ext}`, { type: blob.type || "video/webm" });
+    generatedShareUrl = URL.createObjectURL(blob);
+    const video = $("#shareVideoPreview"); video.src = generatedShareUrl; video.hidden = false; $("#shareVideoCanvas").hidden = true;
+    $("#shareVideoStatus").textContent = `${tr("Video ready")}: ${(blob.size / 1024 / 1024).toFixed(1)} MB. Review it before sharing.`;
+    $("#downloadIssueVideo").hidden = false; $("#shareIssueVideo").hidden = false; $("#shareFacebook").hidden = false; $("#shareX").hidden = false; $("#copyShareCaption").hidden = false;
+    const link = createShareLink(activeShareReport.ticketId), caption = shareCaption(activeShareReport);
+    $("#shareFacebook").href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}&quote=${encodeURIComponent(caption)}`;
+    $("#shareX").href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
+}
+$("#generateIssueVideo").onclick = () => {
+    if (!activeShareReport) return;
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { $("#shareVideoStatus").textContent = tr("Video creation is not supported in this browser. Record a clip with your phone camera, then choose it above."); return; }
+    const canvas = $("#shareVideoCanvas"), context = canvas.getContext("2d");
+    const candidates = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    const mimeType = candidates.find(type => MediaRecorder.isTypeSupported(type));
+    let stream;
+    try {
+        stream = canvas.captureStream(18);
+        const recorder = mimeType ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 850000 }) : new MediaRecorder(stream);
+        shareRecorder = recorder;
+        const chunks = [], started = performance.now();
+        recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+        recorder.onerror = () => { stream.getTracks().forEach(track => track.stop()); $("#shareVideoStatus").textContent = tr("Video creation failed. Try recording a clip with your phone camera."); };
+        recorder.onstop = () => { stream.getTracks().forEach(track => track.stop()); finishShareVideo(new Blob(chunks, { type: recorder.mimeType || mimeType || "video/webm" })); };
+        const draw = time => {
+            const progress = Math.min(1, (time - started) / 7000);
+            drawShareVideoFrame(context, canvas, activeShareReport, progress);
+            if (progress < 1 && recorder.state === "recording") requestAnimationFrame(draw);
+            else if (recorder.state === "recording") recorder.stop();
+        };
+        recorder.start(250); draw(started);
+        $("#shareVideoStatus").textContent = tr("Creating a 7-second status video…"); $("#generateIssueVideo").disabled = true;
+        recorder.addEventListener("stop", () => { shareRecorder = null; $("#generateIssueVideo").disabled = false; }, { once: true });
+    } catch (error) {
+        stream?.getTracks().forEach(track => track.stop());
+        $("#shareVideoStatus").textContent = tr("Video creation failed. Try recording a clip with your phone camera.");
+        $("#generateIssueVideo").disabled = false;
+    }
+};
+$("#issueVideoFile").addEventListener("change", event => {
+    const file = event.target.files?.[0]; if (!file) return;
+    if (!file.type.startsWith("video/") || file.size > 100 * 1024 * 1024) { event.target.value = ""; $("#shareVideoStatus").textContent = tr("Choose a video under 100 MB."); return; }
+    selectedIssueVideo = file;
+    if (selectedIssueVideoUrl) URL.revokeObjectURL(selectedIssueVideoUrl);
+    selectedIssueVideoUrl = URL.createObjectURL(file);
+    const video = $("#shareVideoPreview"); video.src = selectedIssueVideoUrl; video.hidden = false; $("#shareVideoCanvas").hidden = true;
+    $("#shareVideoStatus").textContent = `${tr("Selected local video")}: ${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB. It has not been uploaded.`;
+    $("#downloadIssueVideo").hidden = false; $("#shareIssueVideo").hidden = false; $("#shareFacebook").hidden = false; $("#shareX").hidden = false; $("#copyShareCaption").hidden = false;
+    const link = createShareLink(activeShareReport.ticketId), caption = shareCaption(activeShareReport);
+    $("#shareFacebook").href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}&quote=${encodeURIComponent(caption)}`;
+    $("#shareX").href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
+});
+$("#downloadIssueVideo").onclick = () => { const file = selectedIssueVideo || generatedShareFile; if (file) downloadShareFile(file); };
+$("#shareIssueVideo").onclick = async () => {
+    const file = selectedIssueVideo || generatedShareFile;
+    if (!file) return;
+    if (!$("#sharePublicConsent").checked) { $("#shareVideoStatus").textContent = tr("Review the public-sharing notice before continuing."); return; }
+    const data = { files: [file], title: tr("CivicTrack public issue update"), text: shareCaption(activeShareReport), url: createShareLink(activeShareReport.ticketId) };
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share(data); $("#shareVideoStatus").textContent = tr("Share sheet opened. Choose an app and review the post before publishing."); }
+        catch (error) { if (error.name !== "AbortError") $("#shareVideoStatus").textContent = tr("Sharing was unavailable. Download the video and attach it in your social app."); }
+    } else {
+        downloadShareFile(file); $("#shareVideoStatus").textContent = tr("Video downloaded. Open your social app, attach it, and add the public ticket link.");
+    }
+};
+$("#copyShareCaption").onclick = async () => {
+    try { await navigator.clipboard.writeText(shareCaption(activeShareReport)); $("#shareVideoStatus").textContent = tr("Caption copied."); }
+    catch { $("#shareVideoStatus").textContent = tr("Copy the public ticket link from the Facebook or X share option."); }
+};
+shareDialog.addEventListener("click", event => { if (event.target.closest("[data-share-close]")) shareDialog.close(); });
+shareDialog.addEventListener("close", () => {
+    if (shareRecorder?.state === "recording") { shareRecorder.ondataavailable = null; shareRecorder.onstop = null; try { shareRecorder.stop(); } catch { } shareRecorder = null; }
+    $("#shareVideoPreview").pause(); $("#shareVideoPreview").removeAttribute("src");
+    if (generatedShareUrl) URL.revokeObjectURL(generatedShareUrl);
+    if (selectedIssueVideoUrl) URL.revokeObjectURL(selectedIssueVideoUrl);
+    generatedShareUrl = null; selectedIssueVideoUrl = null; generatedShareFile = null; selectedIssueVideo = null; activeShareReport = null;
+});
 async function submitOfficerFeedback(ticketId, button) {
     const message = button.closest(".case-feedback")?.querySelector("[data-feedback-message]");
     button.disabled = true;
@@ -746,6 +910,8 @@ async function submitOfficerFeedback(ticketId, button) {
     }
 }
 $("#tview").addEventListener("click", event => {
+    const shareButton = event.target.closest("[data-share-issue]");
+    if (shareButton && currentSavedComplaintForShare?.ticketId === shareButton.dataset.shareIssue) { openIssueShare(currentSavedComplaintForShare); return; }
     const button = event.target.closest("[data-submit-feedback]");
     if (button) submitOfficerFeedback(button.dataset.submitFeedback, button);
 });
@@ -765,6 +931,7 @@ async function trackTicket(ticketId = $("#tid").value.trim()) {
         $("#tview").innerHTML = '<p class="card" style="max-width:640px;margin:14px auto">Enter a ticket ID to track a complaint.</p>';
         return;
     }
+    currentSavedComplaintForShare = null;
 
     const demo = T.find(t => String(t.id) === requestedId);
     if (demo) return showT(demo.id);
@@ -1300,6 +1467,11 @@ requestDeviceLocation().then(showNearbyReportsAt).catch(() => {
     if (status) status.textContent = "Showing public reports for the default map area. Allow location to see nearby issues.";
 });
 loadSession().then(() => { if (["officer", "administrator"].includes(currentUser?.role)) go("dash"); });
+const linkedTicket = new URLSearchParams(location.search).get("ticket");
+if (/^CIV-[A-F0-9]{16}$/i.test(linkedTicket || "")) {
+    $("#tid").value = linkedTicket.toUpperCase();
+    setTimeout(() => { go("track"); void trackTicket(linkedTicket); }, 0);
+}
 addEventListener("scroll", () => { const h = document.documentElement; $("#prog").style.width = h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight) * 100 + "%" });
 addEventListener("mousemove", e => { const c = e.target.closest && e.target.closest(".card"); if (c) { const r = c.getBoundingClientRect(); c.style.setProperty("--mx", e.clientX - r.left + "px"); c.style.setProperty("--my", e.clientY - r.top + "px") } });
 function releaseLandingIntro() { requestAnimationFrame(() => $("#v-home .landing-hero")?.classList.add("landing-ready")); }

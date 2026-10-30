@@ -5,7 +5,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#15352d">
-    <meta name="description" content="Report civic issues, follow verified progress, and review public service performance.">
+    <meta name="description"
+        content="Report civic issues, follow verified progress, and review public service performance.">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/civictrack.svg" type="image/svg+xml">
     <meta name="mobile-web-app-capable" content="yes">
@@ -48,6 +49,46 @@
             <button class="btn rust" id="allowWelcomeLocation" type="button">Allow location</button>
             <button class="btn line" id="skipWelcomeLocation" type="button">Skip</button>
             <p id="welcomeLocationStatus" class="mut" role="status" aria-live="polite"></p>
+        </div>
+    </dialog>
+    <dialog id="escalationShareDialog" class="escalation-share-dialog" aria-labelledby="shareDialogTitle">
+        <div class="escalation-share-shell">
+            <div class="escalation-share-heading">
+                <div>
+                    <p class="eyebrow" data-share-kicker>PUBLIC ISSUE UPDATE</p>
+                    <h2 id="shareDialogTitle">Share an unresolved issue</h2>
+                </div>
+                <button class="btn line" type="button" data-share-close aria-label="Close">×</button>
+            </div>
+            <p class="mut" id="shareDialogIntro">Create a short status video, or record/choose an issue clip. Nothing is
+                uploaded to CivicTrack.</p>
+            <div class="escalation-share-preview">
+                <canvas id="shareVideoCanvas" width="720" height="1280" role="img"
+                    aria-label="Preview of a factual civic issue status video"></canvas>
+                <video id="shareVideoPreview" controls playsinline hidden></video>
+            </div>
+            <label class="share-video-picker" for="issueVideoFile">
+                <span>Record or choose your own issue video (optional)</span>
+                <input id="issueVideoFile" type="file" accept="video/*" capture="environment">
+            </label>
+            <p class="mut share-video-privacy">Only share footage you have permission to publish. Check for faces,
+                license plates, phone numbers, and private addresses first.</p>
+            <label class="share-consent"><input id="sharePublicConsent" type="checkbox"><span>I reviewed the content and
+                    understand that posting it publicly means others may copy or reshare it.</span></label>
+            <p id="shareVideoStatus" class="mut" role="status" aria-live="polite"></p>
+            <div class="escalation-share-actions">
+                <button class="btn rust" id="generateIssueVideo" type="button">Create status video</button>
+                <button class="btn line" id="downloadIssueVideo" type="button" hidden>Download video</button>
+                <button class="btn grn" id="shareIssueVideo" type="button" hidden>Share video to apps</button>
+                <a class="btn line" id="shareFacebook" target="_blank" rel="noopener noreferrer" hidden>Facebook · share
+                    report link</a>
+                <a class="btn line" id="shareX" target="_blank" rel="noopener noreferrer" hidden>X · share report
+                    link</a>
+                <button class="btn line" id="copyShareCaption" type="button" hidden>Copy caption</button>
+            </div>
+            <p class="mut share-platform-note">Social apps decide whether they can accept a video from your phone.
+                Facebook and X links share the public report link; attach the downloaded clip in those apps if you want
+                to include it. Instagram sharing uses your phone’s share menu when supported.</p>
         </div>
     </dialog>
     <div id="splash">
