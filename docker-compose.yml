@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-civic_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-civic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-civic_dev_password}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - civic_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civic} -d ${POSTGRES_DB:-civic_platform}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-civic}:${POSTGRES_PASSWORD:-civic_dev_password}@db:5432/${POSTGRES_DB:-civic_platform}
+      # Public, demo-only signing key. server.js refuses it in production.
+      JWT_SECRET: ${JWT_SECRET:-civic-demo-only-public-signing-key-not-for-production-2026}
+      ENABLE_DEMO_ACCOUNTS: ${ENABLE_DEMO_ACCOUNTS:-true}
+      DEMO_CITIZEN_EMAIL: ${DEMO_CITIZEN_EMAIL:-testcitizen@gmail.com}
+      DEMO_CITIZEN_PASSWORD: ${DEMO_CITIZEN_PASSWORD:-citizen12345}
+      DEMO_OFFICER_EMAIL: ${DEMO_OFFICER_EMAIL:-testdepartment@gmail.com}
+      DEMO_OFFICER_PASSWORD: ${DEMO_OFFICER_PASSWORD:-department12345}
+      DEMO_OFFICER_DEPARTMENT: ${DEMO_OFFICER_DEPARTMENT:-roads}
+      ESCALATION_INTERVAL_MS: ${ESCALATION_INTERVAL_MS:-60000}
+      MEDIA_STORAGE_DRIVER: ${MEDIA_STORAGE_DRIVER:-local}
+      UPLOAD_DIR: /app/data/private-uploads
+      DUPLICATE_RADIUS_METERS: ${DUPLICATE_RADIUS_METERS:-1000}
+      DUPLICATE_LOOKBACK_DAYS: ${DUPLICATE_LOOKBACK_DAYS:-30}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_SESSION_TOKEN: ${S3_SESSION_TOKEN:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    volumes:
+      - civic_private_uploads:/app/data/private-uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  civic_postgres_data:
+  civic_private_uploads:

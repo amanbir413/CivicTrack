@@ -1,0 +1,296 @@
+const { randomUUID } = require("node:crypto");
+const express = require("express");
+const { normalizeComplaintInput } = require("../validation/complaints");
+const { requireRoles } = require("../auth");
+const { CATEGORIES } = require("../validation/complaints");
+
+const DEFAULT_RADIUS_METERS = 1000;
+const DEFAULT_LOOKBACK_DAYS = 30;
+
+function duplicateSearchConfig(env = process.env) {
+    const radius = Number(env.DUPLICATE_RADIUS_METERS);
+    const days = Number(env.DUPLICATE_LOOKBACK_DAYS);
+    return {
+        radiusMeters: Number.isFinite(radius) && radius >= 50 && radius <= 10000 ? radius : DEFAULT_RADIUS_METERS,
+        lookbackDays: Number.isFinite(days) && days >= 1 && days <= 3650 ? days : DEFAULT_LOOKBACK_DAYS
+    };
+}
+
+function apiError(statusCode, code, message) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    error.code = code;
+    return error;
+}
+
+async function findComplaint(db, ticketId) {
+    const result = await db.query(
+        `SELECT c.id, c.ticket_id, c.title, c.description, c.status,
+                c.created_at, c.updated_at, c.due_at,
+                c.latitude, c.longitude, c.map_x, c.map_y, c.user_id, c.closed_at,
+                (c.status <> 'closed' AND c.due_at < CURRENT_TIMESTAMP) AS is_overdue,
+                EXISTS (SELECT 1 FROM complaint_events escal WHERE escal.complaint_id=c.id AND escal.event_type='escalated') AS is_escalated,
+                cat.slug AS category_slug, cat.label AS category_label,
+                d.id AS department_id, d.slug AS department_slug, d.name AS department_name
+         FROM complaints c
+         JOIN issue_categories cat ON cat.id = c.category_id
+         JOIN departments d ON d.id = c.department_id
+         WHERE c.ticket_id = $1`,
+        [ticketId]
+    );
+
+    if (!result.rowCount) return null;
+    const row = result.rows[0];
+    const eventResult = await db.query(
+        `SELECT event_type, previous_status, new_status, note, created_at
+         FROM complaint_events
+         WHERE complaint_id = $1
+         ORDER BY created_at ASC, id ASC`,
+        [row.id]
+    );
+
+    return {
+        id: String(row.id),
+        ownerId: row.user_id === null ? null : String(row.user_id),
+        ticketId: row.ticket_id,
+        title: row.title,
+        description: row.description,
+        category: { slug: row.category_slug, label: row.category_label },
+        department: { id: String(row.department_id), slug: row.department_slug, name: row.department_name },
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        dueAt: row.due_at,
+        closedAt: row.closed_at,
+        isOverdue: row.is_overdue,
+        isEscalated: row.is_escalated,
+        location: {
+            latitude: row.latitude === null ? null : Number(row.latitude),
+            longitude: row.longitude === null ? null : Number(row.longitude),
+            mapX: row.map_x === null ? null : Number(row.map_x),
+            mapY: row.map_y === null ? null : Number(row.map_y)
+        },
+        events: eventResult.rows.map(event => ({
+            eventType: event.event_type,
+            previousStatus: event.previous_status,
+            newStatus: event.new_status,
+            note: event.note,
+            createdAt: event.created_at
+        }))
+    };
+}
+
+function publicComplaint(complaint) {
+    return {
+        ticketId: complaint.ticketId,
+        category: complaint.category,
+        department: complaint.department,
+        status: complaint.status,
+        createdAt: complaint.createdAt,
+        updatedAt: complaint.updatedAt,
+        dueAt: complaint.dueAt,
+        isOverdue: complaint.isOverdue,
+        isEscalated: complaint.isEscalated,
+        events: complaint.events.map(event => ({
+            eventType: event.eventType,
+            previousStatus: event.previousStatus,
+            newStatus: event.newStatus,
+            createdAt: event.createdAt
+        }))
+    };
+}
+
+function withoutOwner(complaint) {
+    const { ownerId, ...publicFields } = complaint;
+    return publicFields;
+}
+
+function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req, _res, next) => next()) {
+    const router = express.Router();
+    router.post("/suggestions", authenticate, requireRoles("citizen"), async (req, res, next) => {
+        const category = typeof req.body?.category === "string" ? req.body.category.trim().toLowerCase() : "";
+        const latitude = req.body?.location?.latitude, longitude = req.body?.location?.longitude;
+        if (!CATEGORIES.has(category)) return res.status(400).json({ error: { code: "INVALID_CATEGORY", message: "Choose a valid complaint category." } });
+        if (typeof latitude !== "number" || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+            || typeof longitude !== "number" || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+            return res.status(400).json({ error: { code: "LOCATION_REQUIRED", message: "Select a real map location to find nearby reports." } });
+        }
+        const { radiusMeters, lookbackDays } = duplicateSearchConfig();
+        try {
+            const result = await pool.query(`WITH candidates AS (
+                SELECT c.ticket_id,c.status,c.due_at,c.created_at,cat.slug AS category_slug,cat.label AS category_label,
+                    2*6371000*asin(sqrt(least(1,
+                        power(sin(radians(c.latitude-$2::double precision)/2),2)
+                        + cos(radians($2::double precision))*cos(radians(c.latitude))
+                        * power(sin(radians(c.longitude-$3::double precision)/2),2)
+                    ))) AS distance_meters
+                FROM complaints c JOIN issue_categories cat ON cat.id=c.category_id
+                WHERE cat.slug=$1 AND c.status <> 'closed'
+                    AND c.created_at >= CURRENT_TIMESTAMP - ($5::double precision * INTERVAL '1 day')
+                    AND c.latitude BETWEEN $2::double precision-($4::double precision/111320)
+                        AND $2::double precision+($4::double precision/111320)
+                    AND c.longitude BETWEEN $3::double precision-($4::double precision/(111320*GREATEST(abs(cos(radians($2::double precision))),0.01)))
+                        AND $3::double precision+($4::double precision/(111320*GREATEST(abs(cos(radians($2::double precision))),0.01)))
+            )
+            SELECT ticket_id,status,due_at,created_at,category_slug,category_label,round(distance_meters)::int AS distance_meters
+            FROM candidates WHERE distance_meters <= $4 ORDER BY distance_meters,created_at DESC LIMIT 8`,
+            [category, latitude, longitude, radiusMeters, lookbackDays]);
+            return res.json({ suggestions: result.rows.map(row => ({ ticketId: row.ticket_id, category: { slug: row.category_slug, label: row.category_label },
+                status: row.status, distanceMeters: row.distance_meters, createdAt: row.created_at, dueAt: row.due_at })),
+                radiusMeters, lookbackDays, note: "Suggestions are separate reports. They are never merged automatically." });
+        } catch (error) { return next(error); }
+    });
+
+    router.get("/map", async (req, res, next) => {
+        const category = typeof req.query.category === "string" && req.query.category !== "all" ? req.query.category : null;
+        if (category && !CATEGORIES.has(category)) return res.status(400).json({ error: { code: "INVALID_CATEGORY", message: "Unknown map category." } });
+        const statuses = new Set(["assigned", "in_progress", "resolution_pending_confirmation", "reopened", "closed", "overdue", "escalated"]);
+        const status = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : null;
+        if (status && !statuses.has(status)) return res.status(400).json({ error: { code: "INVALID_STATUS", message: "Unknown map status." } });
+        try {
+            const result = await pool.query(`SELECT c.ticket_id,c.latitude,c.longitude,c.status,c.created_at,c.due_at,
+                cat.slug AS category_slug,cat.label AS category_label,
+                (c.status <> 'closed' AND c.due_at < CURRENT_TIMESTAMP) AS is_overdue,
+                EXISTS (SELECT 1 FROM complaint_events e WHERE e.complaint_id=c.id AND e.event_type='escalated') AS is_escalated
+                FROM complaints c JOIN issue_categories cat ON cat.id=c.category_id
+                WHERE c.latitude IS NOT NULL AND c.longitude IS NOT NULL
+                    AND ($1::text IS NULL OR cat.slug=$1)
+                    AND ($2::text IS NULL OR c.status=$2
+                        OR ($2='overdue' AND c.status <> 'closed' AND c.due_at < CURRENT_TIMESTAMP)
+                        OR ($2='escalated' AND EXISTS (SELECT 1 FROM complaint_events e WHERE e.complaint_id=c.id AND e.event_type='escalated')))
+                ORDER BY c.created_at DESC LIMIT 1000`, [category, status]);
+            return res.json({ reports: result.rows.map(row => ({ ticketId: row.ticket_id, latitude: Number(Number(row.latitude).toFixed(3)), longitude: Number(Number(row.longitude).toFixed(3)),
+                category: { slug: row.category_slug, label: row.category_label }, status: row.status, createdAt: row.created_at, dueAt: row.due_at,
+                isOverdue: row.is_overdue, isEscalated: row.is_escalated })) });
+        } catch (error) { return next(error); }
+    });
+
+    router.post("/", authenticate, requireRoles("citizen"), async (req, res, next) => {
+        const normalized = normalizeComplaintInput(req.body);
+        if (normalized.error) {
+            return res.status(400).json({ error: normalized.error });
+        }
+
+        let client;
+        try {
+            client = await pool.connect();
+            await client.query("BEGIN");
+
+            const { title, description, category, location } = normalized.value;
+            const categoryResult = await client.query(
+                `SELECT id, department_id, sla_hours
+                 FROM issue_categories
+                 WHERE slug = $1 AND active = TRUE`,
+                [category]
+            );
+            if (!categoryResult.rowCount) {
+                throw apiError(400, "INVALID_CATEGORY", "That complaint category is not available.");
+            }
+
+            const mapping = categoryResult.rows[0];
+            const ticketId = `CIV-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
+            const inserted = await client.query(
+                `INSERT INTO complaints
+                    (ticket_id, title, description, category_id, department_id, user_id, status,
+                     latitude, longitude, map_x, map_y, due_at)
+                 VALUES
+                    ($1, $2, $3, $4, $5, $6, 'assigned', $7, $8, $9, $10,
+                     CURRENT_TIMESTAMP + ($11 * INTERVAL '1 hour'))
+                 RETURNING id`,
+                [ticketId, title, description, mapping.id, mapping.department_id, req.user.sub,
+                    location.latitude, location.longitude, location.mapX, location.mapY, mapping.sla_hours]
+            );
+
+            await client.query(
+                `INSERT INTO complaint_events
+                    (complaint_id, event_type, actor_type, actor_user_id, previous_status, new_status, note)
+                 VALUES ($1, 'submitted', 'citizen', $2, NULL, 'assigned', $3)`,
+                [inserted.rows[0].id, req.user.sub, "Complaint submitted and assigned to the responsible department."]
+            );
+
+            const complaint = await findComplaint(client, ticketId);
+            await client.query("COMMIT");
+            return res.status(201).json({ complaint: withoutOwner(complaint) });
+        } catch (error) {
+            if (client) {
+                try {
+                    await client.query("ROLLBACK");
+                } catch {
+                    // Preserve the original database error.
+                }
+            }
+            return next(error);
+        } finally {
+            if (client) client.release();
+        }
+    });
+
+    router.post("/:ticketId/confirmation", authenticate, requireRoles("citizen"), async (req, res, next) => {
+        const decision = req.body?.decision;
+        if (!["confirm", "reject"].includes(decision)) return res.status(400).json({ error: { code: "INVALID_DECISION", message: "Decision must be confirm or reject." } });
+        const ticketId = req.params.ticketId.trim().toUpperCase();
+        if (!/^CIV-[A-F0-9]{16}$/.test(ticketId)) return res.status(400).json({ error: { code: "INVALID_TICKET_ID", message: "Invalid ticket ID." } });
+        let client;
+        try {
+            client = await pool.connect(); await client.query("BEGIN");
+            const found = await client.query("SELECT id,user_id,status FROM complaints WHERE ticket_id=$1 FOR UPDATE", [ticketId]);
+            if (!found.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No saved complaint was found for that ticket ID.");
+            const current = found.rows[0];
+            if (String(current.user_id) !== req.user.sub) throw apiError(403, "FORBIDDEN", "Only the citizen who submitted this complaint may respond.");
+            if (current.status !== "resolution_pending_confirmation") throw apiError(409, "INVALID_TRANSITION", "This complaint is not awaiting citizen confirmation.");
+            const nextStatus = decision === "confirm" ? "closed" : "reopened";
+            const note = typeof req.body.note === "string" ? req.body.note.trim().slice(0, 1000) : "";
+            await client.query("UPDATE complaints SET status=$1, closed_at=CASE WHEN $1='closed' THEN CURRENT_TIMESTAMP ELSE NULL END, updated_at=CURRENT_TIMESTAMP WHERE id=$2", [nextStatus, current.id]);
+            await client.query(`INSERT INTO complaint_events (complaint_id,event_type,actor_type,actor_user_id,previous_status,new_status,note)
+                VALUES ($1,$2,'citizen',$3,'resolution_pending_confirmation',$4,$5)`,
+                [current.id, decision === "confirm" ? "citizen_confirmed" : "reopened", req.user.sub, nextStatus,
+                    decision === "confirm" ? "Citizen confirmed the resolution." : (note || "Citizen rejected the proposed resolution; work reopened.")]);
+            const complaint = await findComplaint(client, ticketId);
+            await client.query("COMMIT"); return res.json({ complaint: withoutOwner(complaint) });
+        } catch (error) { if (client) { try { await client.query("ROLLBACK"); } catch {} } return next(error); }
+        finally { if (client) client.release(); }
+    });
+
+    router.get("/mine", authenticate, requireRoles("citizen"), async (req, res, next) => {
+        try {
+            const result = await pool.query(
+                `SELECT ticket_id FROM complaints WHERE user_id = $1 ORDER BY created_at DESC`, [req.user.sub]
+            );
+            const complaints = [];
+            for (const row of result.rows) complaints.push(withoutOwner(await findComplaint(pool, row.ticket_id)));
+            return res.json({ complaints });
+        } catch (error) { return next(error); }
+    });
+
+    router.get("/:ticketId", optionalAuthenticate, async (req, res, next) => {
+        const ticketId = req.params.ticketId.trim().toUpperCase();
+        if (!/^CIV-[A-F0-9]{16}$/.test(ticketId)) {
+            return res.status(400).json({
+                error: { code: "INVALID_TICKET_ID", message: "Enter a ticket ID in the form CIV-XXXXXXXXXXXXXXXX." }
+            });
+        }
+
+        try {
+            const complaint = await findComplaint(pool, ticketId);
+            if (!complaint) {
+                return res.status(404).json({
+                    error: { code: "TICKET_NOT_FOUND", message: "No saved complaint was found for that ticket ID." }
+                });
+            }
+            if (req.user && (req.user.role === "administrator" || req.user.sub === complaint.ownerId
+                || (req.user.role === "officer" && String(req.user.departmentId) === String(complaint.department.id)))) {
+                const media = await pool.query("SELECT id,mime_type,byte_size,created_at FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
+                complaint.evidence = media.rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, createdAt: row.created_at }));
+                complaint.viewerIsOwner = req.user?.role === "citizen" && req.user.sub === complaint.ownerId;
+                return res.json({ complaint: withoutOwner(complaint) });
+            }
+            return res.json({ complaint: publicComplaint(complaint) });
+        } catch (error) {
+            return next(error);
+        }
+    });
+
+    return router;
+}
+
+module.exports = { createComplaintRouter, duplicateSearchConfig, findComplaint, publicComplaint, withoutOwner };

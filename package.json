@@ -1,0 +1,25 @@
+{
+  "name": "civic-issue-accountability-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hackathon MVP for tracking local civic issue reports.",
+  "main": "server/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "db:migrate": "node server/db/migrate.js",
+    "db:seed-demo-accounts": "node server/db/seed-demo-accounts.js",
+    "test": "node --test",
+    "check": "node --check server/server.js && node --check server/routes/auth.js && node --check server/routes/complaints.js && node --check server/routes/officer.js && node --check server/storage/s3.js && node --check script.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.16.3"
+  }
+}

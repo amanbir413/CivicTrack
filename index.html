@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="support-email" content="">
+    <title>CivicTrack · Civic Issue Platform</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+</head>
+
+<body>
+    <div id="splash">
+        <div class="lg">CT</div>
+        <h1>CivicTrack</h1>
+        <p>Public reports. Accountable follow-through.</p>
+        <div class="ld"><i></i></div>
+    </div>
+    <div id="prog"></div>
+    <header>
+        <div class="brand"><i>CT</i><span id="brandT">CivicTrack</span></div>
+        <nav id="nav"></nav>
+        <select id="lang">
+            <option value="en">EN</option>
+            <option value="hi">हिं</option>
+            <option value="pa">ਪੰ</option>
+        </select>
+        <div class="bell" id="bell"><button id="bellB" aria-label="Notifications">🔔<b id="bn">0</b></button>
+            <div id="bellP"></div>
+        </div>
+        <div class="auth-actions" id="authActions"><span id="sessionLabel" class="mut">Not signed in</span><button class="btn line" id="authOpen">Sign in / Register</button><button class="btn line" id="logout" hidden>Sign out</button></div>
+    </header>
+    <main>
+        <!-- HOME -->
+        <section class="view on landing" id="v-home">
+            <section class="landing-hero" aria-labelledby="landing-title">
+                <div class="landing-hero-inner">
+                    <div class="landing-copy">
+                        <p class="landing-eyebrow" data-i="landingKicker">CIVICTRACK · CIVIC ACCOUNTABILITY</p>
+                        <h1 id="landing-title" data-i="landingHeadline">Every street tells a story.</h1>
+                        <p class="landing-lede" data-i="landingLead">Every issue deserves ownership. Every resolution deserves proof.</p>
+                    <div class="landing-actions"><button class="btn landing-primary" onclick="go('report')" data-i="landingReport">Report an issue</button><button class="btn landing-secondary" id="landing-explore-action" data-i="landingExplore">Explore issues <span aria-hidden="true">↘</span></button></div>
+                        <p class="landing-note" data-i="landingPublicNote">A public view of reports shared with approximate locations.</p>
+                    </div>
+                    <div class="landing-map-frame" id="heroMapFrame">
+                        <div class="glare-overlay" aria-hidden="true"></div>
+                        <div class="landing-map-depth" id="heroMapDepth">
+                            <div class="landing-map-heading"><span class="map-live-dot" aria-hidden="true"></span><span data-i="landingMapLabel">CITY ISSUE MAP</span><span class="landing-map-caption" data-i="landingMapCaption">Public reports · approximate locations</span></div>
+                            <div id="homeMap" class="leaflet-map landing-map" role="application" aria-label="Map of public civic reports with approximate locations" tabindex="0"></div>
+                            <p class="landing-map-status" id="homeMapMessage" role="status" aria-live="polite" data-i="landingMapLoading">Loading public reports…</p>
+                            <div class="landing-map-detail" id="homeMapDetail" aria-live="polite" hidden></div>
+                        </div>
+                    </div>
+                </div>
+                <a class="landing-scroll" href="#landing-problem" data-i="landingScroll">Scroll to explore <span aria-hidden="true">↓</span></a>
+            </section>
+            <section class="landing-problem" id="landing-problem" aria-labelledby="problem-title">
+                <div class="landing-section-inner problem-layout">
+                    <p class="landing-eyebrow" data-i="landingProblemKicker">THE ACCOUNTABILITY GAP</p>
+                    <h2 id="problem-title" data-i="landingProblemTitle">A complaint is not a resolution.</h2>
+                    <p class="problem-copy" data-i="landingProblemCopy">The difference is ownership, deadlines, and proof that the work was completed.</p>
+                    <span class="problem-index" aria-hidden="true">01 / 04</span>
+                </div>
+            </section>
+            <!-- SECTION C — MEANINGFUL METRICS (REAL RECORDS. REAL TRANSPARENCY.) -->
+            <section class="landing-metrics" id="landing-metrics" aria-labelledby="metrics-title">
+                <div class="landing-section-inner">
+                    <div class="metrics-head">
+                        <p class="landing-eyebrow" data-i="landingMetricsKicker">PLATFORM INDICATORS</p>
+                        <h2 id="metrics-title" data-i="landingMetricsTitle">Real records. Real transparency.</h2>
+                        <p class="metrics-desc" data-i="landingMetricsCopy">Public metrics computed directly from recorded civic complaints across all city wards.</p>
+                    </div>
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <span class="metric-accent-bar" aria-hidden="true"></span>
+                            <span class="metric-num" id="metricTotal">—</span>
+                            <span class="metric-label" data-i="metricTotalLabel">Total Mapped Issues</span>
+                            <p class="metric-sub" data-i="metricTotalSub">Geotagged public reports on city map</p>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-accent-bar" aria-hidden="true"></span>
+                            <span class="metric-num" id="metricOpen">—</span>
+                            <span class="metric-label" data-i="metricOpenLabel">Open Complaints</span>
+                            <p class="metric-sub" data-i="metricOpenSub">Currently assigned in department queues</p>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-accent-bar" aria-hidden="true"></span>
+                            <span class="metric-num" id="metricOverdue">—</span>
+                            <span class="metric-label" data-i="metricOverdueLabel">Overdue Targets</span>
+                            <p class="metric-sub" data-i="metricOverdueSub">SLA deadline passed with escalation noted</p>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-accent-bar" aria-hidden="true"></span>
+                            <span class="metric-num" id="metricClosed">—</span>
+                            <span class="metric-label" data-i="metricClosedLabel">Verified Closures</span>
+                            <p class="metric-sub" data-i="metricClosedSub">Confirmed resolved with citizen sign-off</p>
+                        </div>
+                    </div>
+                    <p class="metrics-status" id="metricStatus" role="status" aria-live="polite" data-i="landingMetricsStatus">Loading platform indicators from database…</p>
+                </div>
+            </section>
+            <section class="landing-workflow" aria-labelledby="workflow-title">
+                <div class="landing-section-inner"><p class="landing-eyebrow" data-i="landingWorkflowKicker">FROM REPORT TO REVIEW</p><h2 id="workflow-title" data-i="landingWorkflowTitle">Accountability has a sequence.</h2>
+                    <div class="workflow-line" aria-label="Report, assign, escalate, verify">
+                        <article class="workflow-step"><span class="workflow-number">01</span><h3 data-i="workflowReport">Report</h3><p data-i="workflowReportCopy">A citizen submits an issue and receives a ticket ID.</p></article>
+                        <article class="workflow-step"><span class="workflow-number">02</span><h3 data-i="workflowAssign">Assign</h3><p data-i="workflowAssignCopy">The report is routed by category to its responsible department.</p></article>
+                        <article class="workflow-step"><span class="workflow-number">03</span><h3 data-i="workflowEscalate">Escalate</h3><p data-i="workflowEscalateCopy">Missed deadlines are recorded in the complaint history.</p></article>
+                        <article class="workflow-step"><span class="workflow-number">04</span><h3 data-i="workflowVerify">Verify</h3><p data-i="workflowVerifyCopy">The citizen reviews submitted work and confirms it or reopens the issue.</p></article>
+                    </div>
+                </div>
+            </section>
+            <section class="landing-proof" aria-labelledby="proof-title"><div class="landing-section-inner proof-layout"><div><p class="landing-eyebrow" data-i="landingProofKicker">EVIDENCE. THEN CONFIRMATION.</p><h2 id="proof-title" data-i="landingProofTitle">Completion needs a record.</h2><p data-i="landingProofCopy">Department officers attach resolution evidence before submitting completed work for citizen review. Citizens can confirm the resolution or reject it to reopen the complaint.</p></div><div class="proof-mark" aria-hidden="true"><span>✓</span><i></i><b data-i="landingProofMark">CITIZEN REVIEW</b></div></div></section>
+            <section class="landing-shortcuts" aria-labelledby="shortcuts-title"><div class="landing-section-inner"><p class="landing-eyebrow" data-i="landingShortcutsKicker">START WITH THE ISSUE</p><h2 id="shortcuts-title" data-i="landingShortcutsTitle">What needs attention?</h2><div class="landing-search"><input id="q" placeholder="What is the problem? e.g. pothole, water leak" aria-label="Describe the civic problem"><button class="btn landing-primary" id="landingSearchAction" data-i="landingSearchAction">Continue to report</button></div><div class="chips"><span>Pothole</span><span>Water leak</span><span>Garbage</span><span>Street light</span></div><h3 data-i="landingCategoryTitle">Or choose a category</h3><div class="grid" id="cats"></div></div></section>
+            <section class="landing-final"><div class="landing-section-inner"><p class="landing-eyebrow" data-i="landingFinalKicker">A BETTER RECORD STARTS HERE</p><h2 data-i="landingFinalTitle">Make every issue count.</h2><p data-i="landingFinalCopy">Report a local issue, follow its progress, and review the outcome.</p><div class="landing-actions"><button class="btn landing-primary" onclick="go('report')" data-i="landingReport">Report an issue</button><button class="btn landing-secondary" onclick="go('track')" data-i="landingTrack">Track a complaint</button><button class="btn landing-secondary" onclick="go('map')" data-i="landingExploreMap">Explore the map</button></div></div></section>
+        </section>
+        <section class="view" id="v-auth">
+            <h2>Account access</h2>
+            <p class="mut">Create a citizen account or sign in to continue. Department and administrator accounts are issued by the platform.</p>
+            <p class="mut" id="authMessage" role="alert" aria-live="polite"></p>
+            <div class="auth-panel">
+                <form class="card" id="loginForm"><h3>Sign in</h3>
+                    <label>Email<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+                    <label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="200"></label>
+                    <button class="btn rust" type="submit">Sign in</button>
+                    <p class="mut auth-alternate">New here? <button type="button" class="text-button" id="openRegister">Create a citizen account</button></p>
+                </form>
+            </div>
+        </section>
+        <section class="view" id="v-register">
+            <h2>Create citizen account</h2>
+            <p class="mut">Register a citizen account to submit and manage your civic reports.</p>
+            <p class="mut" id="registerMessage" role="alert" aria-live="polite"></p>
+            <div class="auth-panel">
+                <form class="card" id="registerForm">
+                    <label>Name<input name="name" autocomplete="name" required minlength="2" maxlength="80"></label>
+                    <label>Email<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+                    <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>
+                    <button class="btn rust" type="submit">Register</button>
+                    <p class="mut auth-alternate">Already have an account? <button type="button" class="text-button" id="openLogin">Sign in</button></p>
+                </form>
+            </div>
+        </section>
+        <section class="view info-view" id="v-help">
+            <h2>Help</h2>
+            <article class="card"><h3>Report a civic issue</h3><p>Sign in with a citizen account, choose Report, add an optional title and description, select the issue location on the map (or enter coordinates if map tiles are unavailable), choose a category, and submit. A ticket ID is shown after it is saved.</p></article>
+            <article class="card"><h3>Find and track a ticket</h3><p>Choose Track and enter the ticket ID. Ticket lookup does not require sign-in. The public view shows the ticket timeline and limited complaint details.</p></article>
+            <article class="card"><h3>Review progress and resolution</h3><p>Use the ticket timeline to see recorded progress. When an officer submits work for citizen confirmation, the owning citizen can review the private evidence and confirm the resolution or reject it to reopen the issue.</p></article>
+            <article class="card"><h3>Department officers</h3><p>Officers sign in with an account issued by the platform. Their work queue is limited to their department. They can start work, upload resolution evidence, and submit completed work for the citizen to review.</p></article>
+        </section>
+        <section class="view info-view" id="v-contact">
+            <h2>Contact</h2>
+            <p id="contactStatus" class="mut">A support contact has not been configured for this deployment.</p>
+            <p id="contactEmailRow" hidden><b>Email:</b> <a id="contactEmail"></a></p>
+            <p class="mut">The Contact action opens your email application; the platform does not send or confirm delivery of messages.</p>
+            <p class="mut">Site administrators can configure the public support email by editing the support-email value in index.html.</p>
+        </section>
+        <section class="view info-view" id="v-privacy">
+            <h2>Privacy</h2>
+            <article class="card"><h3>Account and complaint information</h3><p>Accounts store a name, email address, password hash, role, and (for staff) department association. Reports can store a title, description, category, ticket ID, workflow history, account owner, deadlines, and a location pin or coordinates.</p></article>
+            <article class="card"><h3>Photos and evidence</h3><p>A citizen’s selected report photo is preview-only in this interface and is not uploaded. Department resolution evidence images are uploaded to private local storage by default, or to configured private S3-compatible storage, and are served through an authorization-checked endpoint.</p></article>
+            <article class="card"><h3>Public visibility</h3><p>Ticket lookup for visitors provides a limited summary and omits complaint descriptions, precise location, account identifiers, and event notes. The public issue map displays eligible tickets with approximate, rounded locations and safe ticket fields. Owners and authorized department staff can see details permitted by their role.</p></article>
+            <article class="card"><h3>Authentication and access</h3><p>Passwords are stored as bcrypt hashes. Sign-in uses a signed, HttpOnly, SameSite=Lax cookie. Citizen access is limited to their own reports; officer access is department-scoped; administrators have the permissions defined by the application.</p></article>
+            <p class="mut">The application does not define a retention schedule in its interface. Database and uploaded evidence retention depend on how the deployment is operated and configured.</p>
+        </section>
+        <!-- REPORT -->
+        <section class="view" id="v-report">
+            <div class="card" style="max-width:640px;margin:auto">
+                <div class="steps" id="steps"></div>
+                <h3 id="stepT"></h3>
+                <div id="s1"><label class="drop" id="drop">📷 Tap to take or upload a photo<input type="file"
+                            accept="image/*" hidden id="file"></label>
+                    <p class="mut" id="photoNotice">This report photo is preview-only; resolution evidence is uploaded by department staff.</p>
+                    <input id="title" maxlength="120" placeholder="Short issue title (optional)" style="margin-top:12px">
+                    <textarea id="desc" rows="3" maxlength="2000" placeholder="Describe the problem (optional)"
+                        style="margin-top:12px"></textarea>
+                    <button class="btn line" style="margin-top:8px" id="mic">🎤 Speak description</button>
+                </div>
+                <div id="s2" hidden>
+                    <p class="mut">Select the issue location on OpenStreetMap. The pin is used for nearby suggestions and saved with your report.</p><div id="pickMap" class="leaflet-map picker-map" role="application" aria-label="Select complaint location on map"></div>
+                    <div id="manualLocation" hidden><p class="mut">Map tiles are unavailable. You can enter coordinates manually.</p><div class="row"><label>Latitude<input id="manualLat" type="number" min="-90" max="90" step="any"></label><label>Longitude<input id="manualLng" type="number" min="-180" max="180" step="any"></label><button class="btn line" id="manualLocationUse" type="button">Use coordinates</button></div></div>
+                    <p class="mut" id="locationStatus" aria-live="polite">No location selected.</p>
+                    <div id="dupBox"></div>
+                </div>
+                <div id="s3" hidden>
+                    <div class="grid" id="catPick"></div>
+                    <p class="mut" id="sugg"></p>
+                    <p class="mut" id="formError" role="alert"></p>
+                </div>
+                <div id="s4" hidden style="text-align:center"><svg class="tick" width="84" height="84"
+                        viewBox="0 0 80 80">
+                        <circle cx="40" cy="40" r="36" fill="#10B981" />
+                        <path d="M24 41l11 11 21-23" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                    <h2 id="tkId"></h2>
+                    <p id="tkDue" class="mut"></p>
+                    <p id="tkStatus" class="mut"></p>
+                    <div id="qr"></div>
+                    <p class="mut" style="margin:0 0 10px">Scan this QR to track your issue</p><button class="btn line"
+                        id="prt">🖨️ Print receipt</button> <button class="btn rust" id="tkGo">Track my issue</button>
+                </div>
+                <div class="row" style="justify-content:space-between;margin-top:18px" id="wizBtns"><button
+                        class="btn line" id="back">Back</button><button class="btn rust" id="next">Next</button></div>
+            </div>
+        </section>
+        <!-- TRACK -->
+        <section class="view" id="v-track">
+            <div class="card" style="max-width:640px;margin:auto">
+                <div class="row"><input id="tid" placeholder="Ticket ID e.g. CIV-..." style="flex:1"><button
+                        class="btn rust" id="tgo">Track</button></div>
+                <div class="mut" style="margin-top:8px">Enter the ticket ID returned after submitting a report. <a href="#" id="try">View demo ticket 48872</a> · no login needed</div>
+            </div>
+            <div id="tview"></div>
+        </section>
+        <!-- MAP -->
+        <section class="view" id="v-map">
+            <h2 style="margin-top:0">Saved civic issues</h2>
+            <p class="mut">Only public ticket details and approximate issue locations appear here; citizen details and staff notes stay private.</p>
+            <div class="row map-filters" style="justify-content:flex-start;margin-bottom:12px"><label>Category<select id="mapCategory"><option value="all">All categories</option></select></label><label>Status<select id="mapStatus"><option value="all">All statuses</option><option value="overdue">Overdue</option><option value="escalated">Escalated</option><option value="assigned">Assigned</option><option value="in_progress">In progress</option><option value="resolution_pending_confirmation">Awaiting citizen</option><option value="reopened">Reopened</option><option value="closed">Closed</option></select></label><button class="btn line" id="mapRefresh">Refresh map</button></div>
+            <div class="two">
+                <div class="card"><div id="mainMap" class="leaflet-map main-map" role="application" aria-label="Filterable map of saved civic complaints"></div><p class="mut" id="mapMessage" aria-live="polite">Loading mapped reports…</p></div>
+                <div class="card" id="popup">
+                    <p class="mut">Tap a pin to see details.</p>
+                </div>
+            </div>
+        </section>
+        <!-- WARD -->
+        <section class="view" id="v-ward">
+            <h2 style="margin-top:0">🏆 Ward leaderboard</h2>
+            <p class="mut">Illustrative scores from the original browser demo records.</p>
+            <div class="card" id="wards"></div>
+        </section>
+        <section class="view" id="v-mine">
+            <h2 style="margin-top:0">📋 My saved reports</h2>
+            <p class="mut">Reports submitted from your account.</p>
+            <div id="mine"></div>
+        </section>
+        <!-- DASH -->
+        <section class="view" id="v-dash">
+            <div class="row" style="justify-content:space-between;align-items:center">
+                <h2 style="margin:0">Department work queue</h2><button class="btn line" id="queueRefresh">Refresh queue</button>
+            </div>
+            <div class="grid" id="kpi" style="margin-top:14px"></div>
+            <h2>Queue (most urgent first)</h2>
+            <div class="card wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Issue</th>
+                            <th>Department</th>
+                            <th>Deadline</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="queue"></tbody>
+                </table>
+            </div>
+            <p class="mut">Queue and counts below are live database records. The charts and scorecards that follow are illustrative demo data.</p>
+            <div class="two">
+                <div>
+                    <h2>Resolved per week</h2>
+                    <div class="card">
+                        <div class="bars" id="chart"></div>
+                        <div style="height:22px"></div>
+                    </div>
+                </div>
+                <div>
+                    <h2>Department scorecard</h2>
+                    <div class="card" id="score"></div>
+                </div>
+            </div>
+            <h2>Officer scorecard</h2>
+            <div class="card wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Officer</th>
+                            <th>Level</th>
+                            <th>Open</th>
+                            <th>Avg response</th>
+                            <th>Rating</th>
+                        </tr>
+                    </thead>
+                    <tbody id="off"></tbody>
+                </table>
+            </div>
+            <h2>Recent activity</h2>
+            <div class="card" id="act"></div>
+        </section>
+    </main>
+    <footer class="foot"><b>LogicLoops</b> · Civic Issue Escalation &amp; Accountability Platform<br><a
+            href="#help" data-view="help">Help</a><a href="#contact" data-view="contact">Contact</a><a href="#privacy" data-view="privacy">Privacy</a><br><span>Zinnovation 4.0 · Smart &amp;
+            Sustainable Cities</span></footer>
+    <button class="fab cit-only" onclick="go('report')" title="Report a problem">＋<span>Report</span></button>
+    <div class="drawer" id="drawer">
+        <div id="dBody"></div>
+    </div>
+    <div id="toast"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="i18n.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
