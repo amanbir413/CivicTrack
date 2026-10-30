@@ -339,6 +339,33 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
         finally { if (client) client.release(); }
     });
 
+    router.post("/:ticketId/feedback", authenticate, requireRoles("citizen"), async (req, res, next) => {
+        const ticketId = req.params.ticketId.trim().toUpperCase();
+        if (!/^CIV-[A-F0-9]{16}$/.test(ticketId)) return res.status(400).json({ error: { code: "INVALID_TICKET_ID", message: "Invalid ticket ID." } });
+        const rating = req.body?.rating;
+        const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
+        if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: { code: "INVALID_RATING", message: "Choose a rating from 1 to 5." } });
+        if (comment.length > 500) return res.status(400).json({ error: { code: "COMMENT_TOO_LONG", message: "Feedback must be 500 characters or fewer." } });
+        try {
+            const found = await pool.query("SELECT id,user_id,status FROM complaints WHERE ticket_id=$1", [ticketId]);
+            if (!found.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No saved complaint was found for that ticket ID.");
+            const complaint = found.rows[0];
+            if (String(complaint.user_id) !== req.user.sub) throw apiError(403, "FORBIDDEN", "Only the citizen who submitted this report may leave feedback.");
+            if (complaint.status !== "closed") throw apiError(409, "FEEDBACK_NOT_AVAILABLE", "Feedback is available after you confirm the resolution.");
+            const resolver = await pool.query(`SELECT actor_user_id FROM complaint_events
+                WHERE complaint_id=$1 AND event_type='status_changed' AND new_status='resolution_pending_confirmation'
+                    AND actor_type='officer' AND actor_user_id IS NOT NULL
+                ORDER BY created_at DESC,id DESC LIMIT 1`, [complaint.id]);
+            if (!resolver.rowCount) throw apiError(409, "OFFICER_NOT_FOUND", "The officer for this confirmed resolution could not be verified.");
+            await pool.query(`INSERT INTO officer_feedback (complaint_id,officer_id,citizen_id,rating,comment)
+                VALUES ($1,$2,$3,$4,$5)`, [complaint.id, resolver.rows[0].actor_user_id, req.user.sub, rating, comment]);
+            return res.status(201).json({ ok: true });
+        } catch (error) {
+            if (error.code === "23505") return res.status(409).json({ error: { code: "FEEDBACK_ALREADY_SUBMITTED", message: "Feedback has already been submitted for this report." } });
+            return next(error);
+        }
+    });
+
     router.get("/mine", authenticate, requireRoles("citizen"), async (req, res, next) => {
         try {
             const result = await pool.query(
@@ -370,6 +397,20 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
                 const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
                 complaint.evidence = media.rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at }));
                 complaint.viewerIsOwner = req.user?.role === "citizen" && req.user.sub === complaint.ownerId;
+                if (complaint.viewerIsOwner && complaint.status === "closed") {
+                    const feedback = await pool.query(`SELECT f.rating,f.comment,f.created_at,u.name AS officer_name
+                        FROM officer_feedback f JOIN users u ON u.id=f.officer_id
+                        WHERE f.complaint_id=$1 AND f.citizen_id=$2`, [complaint.id, req.user.sub]);
+                    const resolver = await pool.query(`SELECT u.name FROM complaint_events e JOIN users u ON u.id=e.actor_user_id
+                        WHERE e.complaint_id=$1 AND e.event_type='status_changed'
+                            AND e.new_status='resolution_pending_confirmation' AND e.actor_type='officer'
+                        ORDER BY e.created_at DESC,e.id DESC LIMIT 1`, [complaint.id]);
+                    complaint.feedback = feedback.rowCount ? {
+                        rating: feedback.rows[0].rating, comment: feedback.rows[0].comment,
+                        createdAt: feedback.rows[0].created_at, officerName: feedback.rows[0].officer_name
+                    } : null;
+                    complaint.resolvedByName = resolver.rows[0]?.name || null;
+                }
                 return res.json({ complaint: withoutOwner(complaint) });
             }
             return res.json({ complaint: publicComplaint(complaint) });

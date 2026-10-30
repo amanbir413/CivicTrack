@@ -14,7 +14,8 @@
 <body>
     <dialog id="contentReviewDialog" class="content-review-dialog">
         <div id="contentReviewResult" class="content-review-result" role="status" aria-live="polite">
-            <h3 id="contentReviewTitle"></h3><p id="contentReviewMessage"></p>
+            <h3 id="contentReviewTitle"></h3>
+            <p id="contentReviewMessage"></p>
             <button type="button" class="btn rust" id="contentReviewClose">Continue</button>
         </div>
     </dialog>
@@ -23,14 +24,19 @@
             <h2 id="welcomeTitle">Welcome to CivicTrack</h2>
             <p>Choose your language to get started.</p>
             <label for="welcomeLanguage">Language</label>
-            <select id="welcomeLanguage"><option value="en">English</option><option value="hi">हिंदी</option><option value="pa">ਪੰਜਾਬੀ</option></select>
+            <select id="welcomeLanguage">
+                <option value="en">English</option>
+                <option value="hi">हिंदी</option>
+                <option value="pa">ਪੰਜਾਬੀ</option>
+            </select>
             <button class="btn rust" id="welcomeContinue" value="continue">Continue</button>
         </form>
     </dialog>
     <dialog id="locationSetup" class="welcome-setup" aria-labelledby="locationSetupTitle">
         <div class="welcome-location-content">
             <h2 id="locationSetupTitle">Use your location?</h2>
-            <p>Location helps center nearby civic reports and can be used when you submit a report. Your browser will ask for permission. You can skip this and use the site without location.</p>
+            <p>Location helps center nearby civic reports and can be used when you submit a report. Your browser will
+                ask for permission. You can skip this and use the site without location.</p>
             <button class="btn rust" id="allowWelcomeLocation" type="button">Allow location</button>
             <button class="btn line" id="skipWelcomeLocation" type="button">Skip</button>
             <p id="welcomeLocationStatus" class="mut" role="status" aria-live="polite"></p>
@@ -346,15 +352,20 @@
                         style="margin-top:12px">
                     <textarea id="desc" rows="3" maxlength="2000" placeholder="Describe the problem (optional)"
                         style="margin-top:12px"></textarea>
-                    <p class="mut priority-privacy-note">Google Gemini checks that your issue title, description, selected category, and live photo are relevant before submission. This content is sent to Google for review; GPS coordinates and account details are not sent for this check. Priority is also an AI recommendation for staff review. Avoid including sensitive personal information.</p>
+                    <p class="mut priority-privacy-note">Google Gemini checks that your issue title, description,
+                        selected category, and live photo are relevant before submission. This content is sent to Google
+                        for review; GPS coordinates and account details are not sent for this check. Priority is also an
+                        AI recommendation for staff review. Avoid including sensitive personal information.</p>
                     <div class="voice-controls" style="margin-top:8px">
-                        <button class="btn line" type="button" id="mic" aria-pressed="false">🎤 Start voice input</button>
+                        <button class="btn line" type="button" id="mic" aria-pressed="false">🎤 Start voice
+                            input</button>
                         <button class="btn line" type="button" id="voiceContinue" hidden>Continue speaking</button>
                     </div>
                     <p id="voiceStatus" class="mut" role="status" aria-live="polite" hidden></p>
                 </div>
                 <div id="s3" hidden>
-                    <p class="mut">The map centers on your GPS position. Check or adjust the issue pin inside the 50 m orange circle; pins outside it are not allowed.</p>
+                    <p class="mut">The map centers on your GPS position. Check or adjust the issue pin inside the 50 m
+                        orange circle; pins outside it are not allowed.</p>
                     <div id="pickMap" class="leaflet-map picker-map" role="application"
                         aria-label="Select complaint location on map"></div>
                     <div id="manualLocation" hidden>
@@ -424,7 +435,9 @@
                 <div class="card map-nearby-panel" id="popup" aria-live="polite">
                     <h3>Nearby public reports</h3>
                     <p class="mut">Choose a report to focus its location on the map.</p>
-                    <div id="nearbyIssueList"><p class="mut">Loading public reports…</p></div>
+                    <div id="nearbyIssueList">
+                        <p class="mut">Loading public reports…</p>
+                    </div>
                     <div id="selectedMapReport" hidden></div>
                 </div>
             </div>
@@ -434,6 +447,14 @@
             <h2 style="margin-top:0">🏆 Ward leaderboard</h2>
             <p class="mut">Illustrative scores from the original browser demo records.</p>
             <div class="card" id="wards"></div>
+        </section>
+        <section class="view" id="v-rankings" aria-labelledby="rankingsTitle">
+            <h1 id="rankingsTitle" style="margin-top:0">Officer ratings</h1>
+            <p class="mut">Feedback comes from citizens who confirmed a completed report. Ratings describe service
+                experiences; they are not a finding about an officer’s honesty.</p>
+            <div id="rankingsMessage" class="card ranking-message" role="status" aria-live="polite">Loading officer
+                ratings…</div>
+            <div id="rankingsList" class="officer-rankings" aria-live="polite"></div>
         </section>
         <section class="view" id="v-mine">
             <h2 style="margin-top:0">📋 My saved reports</h2>
@@ -446,9 +467,18 @@
             <div class="card profile-card">
                 <h3>Account details</h3>
                 <dl class="profile-details">
-                    <div><dt>Name</dt><dd id="profileName"></dd></div>
-                    <div><dt>Email</dt><dd id="profileEmail"></dd></div>
-                    <div><dt>Account type</dt><dd id="profileRole">Citizen</dd></div>
+                    <div>
+                        <dt>Name</dt>
+                        <dd id="profileName"></dd>
+                    </div>
+                    <div>
+                        <dt>Email</dt>
+                        <dd id="profileEmail"></dd>
+                    </div>
+                    <div>
+                        <dt>Account type</dt>
+                        <dd id="profileRole">Citizen</dd>
+                    </div>
                 </dl>
                 <p class="mut">To protect your account, these details are view-only here.</p>
                 <button type="button" class="btn rust" id="profileReports">View my reports</button>

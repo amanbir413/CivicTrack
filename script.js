@@ -38,7 +38,7 @@ const KEYS = { roads: "pothole road crack", water: "water leak pipe tap", power:
 const LV = ["Junior Engineer", "Executive Engineer", "Department Head", "Commissioner"], SLA = [48, 24, 24, 12];
 let skew = 0, role = "cit", currentUser = null, view = "home", fil = "all", T = [], savedReports = [], maps = {}, selectedMarker = null, suggestionRequest = 0, cameraStream = null, nearbyCenter = null, reportPhoto = null, reportPhotoUrl = null; const now = () => Date.now() + skew, H = 3600e3;
 const API_BASE = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port === "5500"
-    ? `${location.protocol}//${location.hostname}:3000` : "";
+    ? `${location.protocol}//${location.hostname}:3001` : "";
 const rawFetch = window.fetch.bind(window);
 window.fetch = async (...args) => {
     const originalUrl = String(args[0]?.url || args[0] || "");
@@ -73,13 +73,14 @@ const col = t => t.st >= 3 ? "var(--green)" : left(t) < 0 ? "#EF4444" : "#F59E0B
 const stTag = t => { const k = t.st >= 3 ? 3 : (t.lv > 0 ? 2 : t.st); return `<span class="tag s${k}">${["Registered", "In progress", "Escalated", "Resolved"][k]}</span>` };
 const dueTxt = t => t.st >= 3 ? "Done" : left(t) < 0 ? `<span class="od">Overdue ${fmt(left(t))}</span>` : "Due in " + fmt(left(t));
 function tick() { let ch = 0; T.forEach(t => { if (t.st < 3 && left(t) < 0 && t.lv < 3) { t.lv++; t.dl = now() + SLA[t.lv] * H; t.ev.push([now(), "âš ï¸ Deadline missed â†’ escalated to " + LV[t.lv] + " (alert sent)"]); ch = 1; toast("Ticket #" + t.id + " auto-escalated to " + LV[t.lv]); notify("● #" + t.id + " escalated to " + LV[t.lv], t.id) } }); if (ch || true) paint() }
-function paint() { const v = view; if (v == "home") { renderSavedMap("home"); renderSavedMap("explore") } if (v == "map") { renderSavedMap("main"); requestAnimationFrame(() => maps.main?.invalidateSize()) } if (v == "ward") wards(); if (v == "mine") mine(); if (v == "profile") profile(); if (v == "dash") loadOfficerDashboard(); if (v == "track" && cur) showT(cur, 1) }
+function paint() { const v = view; if (v == "home") { renderSavedMap("home"); renderSavedMap("explore") } if (v == "map") { renderSavedMap("main"); requestAnimationFrame(() => maps.main?.invalidateSize()) } if (v == "ward") wards(); if (v == "rankings") loadOfficerRankings(); if (v == "mine") mine(); if (v == "profile") profile(); if (v == "dash") loadOfficerDashboard(); if (v == "track" && cur) showT(cur, 1) }
 /* NAV */
 function nav() {
     const citizen = [["home", "Home"], ["report", "Report"], ["track", "Track"], ["map", "Map"], ["ward", "Wards"], ["mine", "My reports"]];
     if (currentUser?.role === "citizen") citizen.push(["profile", "Profile"]);
     const staff = [["dash", "Dashboard"], ["map", "Live map"], ["ward", "Wards"]];
     const links = ["officer", "administrator"].includes(currentUser?.role) ? staff : citizen;
+    links.push(["rankings", "Officer ratings"]);
     $("#nav").innerHTML = links.map(x => `<button data-v="${x[0]}" class="${x[0] == view ? "on" : ""}">${window.civicI18n?.translate(x[1]) || (NV[LG] || {})[x[1]] || x[1]}</button>`).join("");
     $$("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 }
@@ -706,8 +707,35 @@ function renderSavedComplaint(complaint) {
     const state = complaint.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : complaint.isOverdue ? '<p class="od">This complaint is overdue and awaiting department action.</p>' : '';
     const evidence = (complaint.evidence || []).map(item => { const label = item.kind === "report" ? "Citizen report photo" : "Resolution evidence"; return `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="${label}"></a>`; }).join("");
     const responseControls = complaint.viewerIsOwner && complaint.status === "resolution_pending_confirmation" ? `<div class="row"><button class="btn grn" onclick="respondToResolution('${esc(complaint.ticketId)}','confirm')">Confirm resolution</button><button class="btn rust" onclick="respondToResolution('${esc(complaint.ticketId)}','reject')">Reject and reopen</button></div><p class="mut">Review the department evidence before responding.</p>` : complaint.viewerIsOwner && complaint.status === "closed" ? '<p>âœ… You confirmed this resolution.</p>' : '';
-    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
+    const feedbackControls = complaint.viewerIsOwner && complaint.status === "closed"
+        ? complaint.feedback
+            ? `<section class="case-feedback"><h3>Your feedback for ${esc(complaint.feedback.officerName || "the officer")}</h3><p class="case-feedback-stars" aria-label="${complaint.feedback.rating} out of 5 stars">${"★".repeat(complaint.feedback.rating)}${"☆".repeat(5 - complaint.feedback.rating)} <span>${complaint.feedback.rating}/5</span></p>${complaint.feedback.comment ? `<p>${esc(complaint.feedback.comment)}</p>` : ""}<p class="mut">Thanks. This rating is linked to your confirmed report.</p></section>`
+            : `<section class="case-feedback"><h3>Rate ${esc(complaint.resolvedByName || "the officer who handled this report")}</h3><p class="mut">Share feedback on communication, transparency, and the confirmed fix. One rating is allowed per closed report.</p><label for="officerFeedbackRating">Your rating</label><select id="officerFeedbackRating"><option value="5">5 — Excellent</option><option value="4">4 — Good</option><option value="3">3 — Fair</option><option value="2">2 — Poor</option><option value="1">1 — Very poor</option></select><label for="officerFeedbackComment">Optional comment</label><textarea id="officerFeedbackComment" maxlength="500" rows="3" placeholder="Describe your experience"></textarea><button type="button" class="btn rust" data-submit-feedback="${esc(complaint.ticketId)}">Submit feedback</button><p class="mut" data-feedback-message role="status"></p></section>`
+        : "";
+    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}${feedbackControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
 }
+async function submitOfficerFeedback(ticketId, button) {
+    const message = button.closest(".case-feedback")?.querySelector("[data-feedback-message]");
+    button.disabled = true;
+    if (message) message.textContent = "Submitting…";
+    try {
+        const response = await fetch(`/api/complaints/${encodeURIComponent(ticketId)}/feedback`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rating: Number($("#officerFeedbackRating").value), comment: $("#officerFeedbackComment").value })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error?.message || "Feedback could not be submitted.");
+        toast("Feedback submitted");
+        await trackTicket(ticketId);
+    } catch (error) {
+        if (message) message.textContent = error.message;
+        button.disabled = false;
+    }
+}
+$("#tview").addEventListener("click", event => {
+    const button = event.target.closest("[data-submit-feedback]");
+    if (button) submitOfficerFeedback(button.dataset.submitFeedback, button);
+});
 async function respondToResolution(ticketId, decision) {
     const promptNote = decision === "reject" ? window.prompt("What remains unresolved? (optional)") : "";
     if (decision === "reject" && promptNote === null) return;
@@ -762,6 +790,44 @@ function profile() {
     $("#profileRole").textContent = "Citizen";
 }
 $("#profileReports").onclick = () => go("mine");
+
+let officerRankingsPending = null;
+async function loadOfficerRankings() {
+    if (officerRankingsPending) return officerRankingsPending;
+    const message = $("#rankingsMessage"), list = $("#rankingsList");
+    message.hidden = false;
+    message.textContent = "Loading officer ratings…";
+    officerRankingsPending = (async () => {
+        try {
+            const response = await fetch("/api/officer/rankings");
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error?.message || "Officer ratings could not be loaded.");
+            const rankings = Array.isArray(payload.rankings) ? payload.rankings : [];
+            list.innerHTML = rankings.map(item => {
+                const stars = item.rating == null ? "☆☆☆☆☆" : "★".repeat(Math.round(item.rating)) + "☆".repeat(5 - Math.round(item.rating));
+                const score = item.rating == null ? "No ratings yet" : `${Number(item.rating).toFixed(1)} / 5`;
+                const rank = item.rank == null ? "—" : `#${item.rank}`;
+                const own = currentUser && String(currentUser.id) === String(item.id);
+                const timing = item.onTimePercent == null ? "" : ` · ${item.onTimePercent}% within deadline`;
+                return `<article class="officer-rating-card${own ? " is-you" : ""}">
+                    <div class="officer-rating-rank" aria-label="${rank === "—" ? "Not ranked" : `Rank ${item.rank}`}">${rank}</div>
+                    <div class="officer-rating-main"><div class="officer-rating-name">${esc(item.name)}${own ? ' <span class="officer-you">You</span>' : ""}</div>
+                        <div class="officer-rating-stars" aria-label="${esc(score)}">${stars}<span>${esc(score)}</span></div>
+                        <p class="mut">${esc(item.department)} · ${item.ratingCount} verified ${item.ratingCount === 1 ? "rating" : "ratings"} · ${item.closedCases} confirmed ${item.closedCases === 1 ? "case" : "cases"}${timing}</p>
+                    </div>
+                </article>`;
+            }).join("");
+            message.textContent = rankings.length ? "Scores are based on one rating per citizen-confirmed case. Rating counts are shown so you can judge the sample size." : "No department officers are listed yet.";
+            message.hidden = !rankings.length;
+        } catch (error) {
+            list.innerHTML = "";
+            message.hidden = false;
+            message.textContent = error.message;
+            message.setAttribute("role", "alert");
+        } finally { officerRankingsPending = null; }
+    })();
+    return officerRankingsPending;
+}
 
 function wards() { const w = []; for (let i = 1; i <= 12; i++) { const a = T.filter(t => t.ward == i); const od = a.filter(t => t.st < 3 && left(t) < 0).length; w.push([i, a.length ? Math.round(100 - od / a.length * 100) : 100, a.length]) } w.sort((a, b) => b[1] - a[1]); $("#wards").innerHTML = w.map((x, i) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${i + 1}. Ward ${x[0]}</b><span>${x[1]}% on time · ${x[2]} issues</span></div><div class="meter"><i style="width:${x[1]}%;background:${x[1] > 80 ? "var(--green)" : x[1] > 50 ? "var(--amber)" : "var(--red)"}"></i></div></div>`).join("") }
 /* DEPARTMENT OPERATIONS DASHBOARD */

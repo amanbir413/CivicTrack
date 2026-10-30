@@ -5912,3 +5912,26 @@ body > .foot {
 .public-report-copy > span { color: var(--mut, #aab5be); font-size: 13px; overflow-wrap: anywhere; }
 .public-report-copy small { color: var(--mut, #aab5be); font-size: 11px; }
 @media(max-width:600px) { .public-report-card { grid-template-columns: 1fr; } .public-report-card > img { height: 180px; } .map-nearby-panel { max-height: none; } }
+
+/* Public officer feedback and verified service ratings. */
+#v-rankings{max-width:980px;margin-inline:auto}
+#v-rankings>h1{color:var(--txt);font-size:clamp(28px,4vw,40px)}
+#v-rankings>.mut{max-width:760px;line-height:1.65}
+.ranking-message{margin:18px 0;color:var(--mut);line-height:1.55}
+.officer-rankings{display:grid;gap:12px;margin-top:16px}
+.officer-rating-card{display:flex;align-items:center;gap:16px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:0 8px 24px #0002}
+.officer-rating-card.is-you{border-color:#f0a36c99}
+.officer-rating-rank{display:grid;place-items:center;flex:0 0 52px;width:52px;height:52px;border-radius:14px;background:#f0a36c18;color:var(--rust);font-weight:850;font-size:18px}
+.officer-rating-main{min-width:0;flex:1}
+.officer-rating-name{font-size:17px;font-weight:750;color:var(--txt)}
+.officer-you{margin-left:8px;padding:3px 8px;border-radius:999px;background:#f0a36c18;color:var(--rust);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.officer-rating-stars,.case-feedback-stars{margin-top:5px;color:#f0a36c;font-size:20px;letter-spacing:2px}
+.officer-rating-stars span,.case-feedback-stars span{margin-left:8px;color:var(--txt);font-size:14px;letter-spacing:0}
+.officer-rating-main .mut{margin:5px 0 0;font-size:13px;line-height:1.55}
+.case-feedback{display:grid;gap:10px;margin-top:20px;padding:18px;border:1px solid #f0a36c66;border-radius:14px;background:#f0a36c0a}
+.case-feedback h3,.case-feedback p{margin:0}
+.case-feedback label{font-weight:650;font-size:14px}
+.case-feedback select,.case-feedback textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card-surface);color:var(--txt);font:inherit}
+.case-feedback textarea{resize:vertical;min-height:82px}
+.case-feedback .btn{justify-self:start}
+@media(max-width:620px){.officer-rating-card{align-items:flex-start;padding:14px;gap:12px}.officer-rating-rank{flex-basis:44px;width:44px;height:44px}.officer-rating-main .mut{font-size:12px}}

@@ -13,6 +13,47 @@ function createOfficerRouter(pool, authenticate, storage) {
     const router = express.Router();
     const staffOnly = [authenticate, requireRoles("officer", "administrator")];
 
+    router.get("/rankings", async (_req, res, next) => {
+        try {
+            const result = await pool.query(`WITH resolved_cases AS (
+                    SELECT c.id,c.closed_at,c.due_at,resolver.actor_user_id AS officer_id
+                    FROM complaints c
+                    JOIN LATERAL (
+                        SELECT actor_user_id,actor_type FROM complaint_events
+                        WHERE complaint_id=c.id AND event_type='status_changed'
+                            AND new_status='resolution_pending_confirmation'
+                        ORDER BY created_at DESC,id DESC LIMIT 1
+                    ) resolver ON resolver.actor_user_id IS NOT NULL AND resolver.actor_type='officer'
+                    WHERE c.status='closed'
+                ), case_stats AS (
+                    SELECT officer_id,count(*)::int AS closed_cases,
+                        count(*) FILTER (WHERE closed_at<=due_at)::int AS on_time_cases
+                    FROM resolved_cases GROUP BY officer_id
+                ), feedback_stats AS (
+                    SELECT officer_id,count(*)::int AS rating_count,
+                        round(avg(rating)::numeric,1) AS average_rating
+                    FROM officer_feedback GROUP BY officer_id
+                )
+                SELECT u.id,u.name,d.name AS department_name,
+                    COALESCE(c.closed_cases,0)::int AS closed_cases,
+                    COALESCE(c.on_time_cases,0)::int AS on_time_cases,
+                    COALESCE(f.rating_count,0)::int AS rating_count,
+                    f.average_rating
+                FROM users u JOIN departments d ON d.id=u.department_id
+                LEFT JOIN case_stats c ON c.officer_id=u.id
+                LEFT JOIN feedback_stats f ON f.officer_id=u.id
+                WHERE u.role='officer'
+                ORDER BY f.average_rating DESC NULLS LAST,f.rating_count DESC,closed_cases DESC,u.name COLLATE "C"`);
+            return res.json({ rankings: result.rows.map((row, index) => ({
+                id: String(row.id), name: row.name, department: row.department_name,
+                rank: row.average_rating === null ? null : index + 1,
+                rating: row.average_rating === null ? null : Number(row.average_rating),
+                ratingCount: row.rating_count, closedCases: row.closed_cases,
+                onTimePercent: row.closed_cases ? Math.round(row.on_time_cases * 100 / row.closed_cases) : null
+            })) });
+        } catch (error) { return next(error); }
+    });
+
     router.get("/queue", ...staffOnly, async (req, res, next) => {
         try {
             const departmentId = req.user.role === "officer" ? req.user.departmentId : req.query.departmentId;
