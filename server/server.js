@@ -11,12 +11,13 @@ const { createStorage } = require("./storage");
 const { startEscalationScheduler } = require("./escalation");
 
 const projectRoot = path.resolve(__dirname, "..");
-const jwtSecret = process.env.JWT_SECRET;
+const jwtSecret = process.env.JWT_SECRET || "";
+const placeholderJwtSecret = /^(?:replace-with-|change-this-secret|your[-_ ])/i.test(jwtSecret);
 const demoJwtSecret = "civic-demo-only-public-signing-key-not-for-production-2026";
-if (process.env.NODE_ENV === "production" && jwtSecret === demoJwtSecret) {
+if (process.env.NODE_ENV === "production" && (jwtSecret === demoJwtSecret || placeholderJwtSecret)) {
     throw new Error("The public demo JWT_SECRET cannot be used when NODE_ENV=production.");
 }
-if (!jwtSecret || Buffer.byteLength(jwtSecret) < 32) {
+if (!jwtSecret || Buffer.byteLength(jwtSecret) < 32 || placeholderJwtSecret) {
     throw new Error("JWT_SECRET must be set to a random value of at least 32 bytes.");
 }
 
@@ -76,6 +77,14 @@ function createApp(database = pool, secret = jwtSecret, options = {}) {
     app.get("/style.css", (_req, res) => res.sendFile(path.join(projectRoot, "style.css")));
     app.get("/i18n.js", (_req, res) => res.sendFile(path.join(projectRoot, "i18n.js")));
     app.get("/script.js", (_req, res) => res.sendFile(path.join(projectRoot, "script.js")));
+    app.get("/manifest.webmanifest", (_req, res) => res.sendFile(path.join(projectRoot, "manifest.webmanifest")));
+    app.get("/service-worker.js", (_req, res) => {
+        res.setHeader("Service-Worker-Allowed", "/");
+        res.setHeader("Cache-Control", "no-cache");
+        return res.sendFile(path.join(projectRoot, "service-worker.js"));
+    });
+    app.get("/icons/civictrack.svg", (_req, res) => res.sendFile(path.join(projectRoot, "icons", "civictrack.svg")));
+    app.use('/images', express.static(path.join(projectRoot, 'images'), { maxAge: '1d' }));
 
     app.use("/api", (_req, res) => {
         res.status(404).json({ error: { code: "NOT_FOUND", message: "API endpoint not found." } });
@@ -115,3 +124,5 @@ if (require.main === module) {
 }
 
 module.exports = { app, createApp };
+
+

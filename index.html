@@ -4,6 +4,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#15352d">
+    <meta name="description" content="Report civic issues, follow verified progress, and review public service performance.">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icons/civictrack.svg" type="image/svg+xml">
     <meta name="support-email" content="">
     <title>CivicTrack · Civic Issue Platform</title>
     <link rel="stylesheet" href="style.css">
@@ -580,6 +584,11 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="i18n.js"></script>
     <script src="script.js"></script>
+    <script>
+        if ("serviceWorker" in navigator && location.protocol !== "file:") {
+            window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js").catch(error => console.error("Service worker registration failed:", error)));
+        }
+    </script>
 </body>
 
 </html>

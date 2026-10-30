@@ -8,3 +8,5 @@ pnpm-debug.log*
 coverage/
 data/private-uploads/
 .DS_Store
+
+!.env.production.example

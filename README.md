@@ -246,3 +246,21 @@ node --check script.js
 `npm test` runs request-validation and S3 adapter unit tests. If `TEST_DATABASE_URL` points to an isolated PostgreSQL test database, it creates a unique temporary schema, applies all migrations, and runs authentication, privacy, geographic map/suggestion, evidence, escalation, workflow, and metrics integration checks. It drops only that generated schema and temporary upload directory. Database integration tests are skipped when `TEST_DATABASE_URL` is unset.
 
 GitHub Actions runs npm ci, npm run check, and the database-backed suite against PostgreSQL 16 for pushes and pull requests. This configuration prepares the app for deployment; it does not deploy it or make this MVP production-ready.
+
+## Install and deploy as a PWA
+
+The same-origin app can be installed from supported browsers. Its service worker caches the static app shell only; authenticated API and evidence requests remain network-only.
+
+### Production Docker Compose
+
+The regular `docker-compose.yml` is intentionally a local demo stack. For a deployment build, use the isolated production stack:
+
+1. Copy `.env.production.example` to `.env.production`.
+2. Generate separate random hex values for `JWT_SECRET` and `POSTGRES_PASSWORD` using the PowerShell command shown in that file. Store the resulting env file securely; it is git-ignored.
+3. Set `APP_PORT` to a free local port if needed.
+4. Start with `docker compose --env-file .env.production -f docker-compose.production.yml up -d --build`.
+5. Check `http://localhost:<APP_PORT>/api/health`.
+
+The production stack requires unique secrets, disables demo accounts, does not publish PostgreSQL on the host, runs the app as the non-root Docker user, and keeps its database and private evidence in separate named volumes. Put a TLS-terminating reverse proxy in front of the app before public use. Back up both volumes. This PostgreSQL Compose configuration runs one app instance; configure shared rate limiting and shared evidence storage before horizontal scaling. Use S3 storage for ephemeral hosting.
+
+Public rankings are derived from feedback left by the citizen who confirmed each case. They represent service experience and are not proof of an officer's honesty. Password recovery and email delivery require an organization mail provider and are not configured here.

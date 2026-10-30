@@ -72,7 +72,7 @@ const stName = t => ["Registered", "In progress", "Escalated", "Resolved"][t.st 
 const col = t => t.st >= 3 ? "var(--green)" : left(t) < 0 ? "#EF4444" : "#F59E0B";
 const stTag = t => { const k = t.st >= 3 ? 3 : (t.lv > 0 ? 2 : t.st); return `<span class="tag s${k}">${["Registered", "In progress", "Escalated", "Resolved"][k]}</span>` };
 const dueTxt = t => t.st >= 3 ? "Done" : left(t) < 0 ? `<span class="od">Overdue ${fmt(left(t))}</span>` : "Due in " + fmt(left(t));
-function tick() { let ch = 0; T.forEach(t => { if (t.st < 3 && left(t) < 0 && t.lv < 3) { t.lv++; t.dl = now() + SLA[t.lv] * H; t.ev.push([now(), "âš ï¸ Deadline missed â†’ escalated to " + LV[t.lv] + " (alert sent)"]); ch = 1; toast("Ticket #" + t.id + " auto-escalated to " + LV[t.lv]); notify("● #" + t.id + " escalated to " + LV[t.lv], t.id) } }); if (ch || true) paint() }
+function tick() { let ch = 0; T.forEach(t => { if (t.st < 3 && left(t) < 0 && t.lv < 3) { t.lv++; t.dl = now() + SLA[t.lv] * H; t.ev.push([now(), "âš ï¸ Deadline missed â†’ escalated to " + LV[t.lv] + " (alert sent)"]); ch = 1; toast("Ticket #" + t.id + " auto-escalated to " + LV[t.lv]); notify("● #" + t.id + " escalated to " + LV[t.lv], t.id) } }); if (ch) paint() }
 function paint() { const v = view; if (v == "home") { renderSavedMap("home"); renderSavedMap("explore") } if (v == "map") { renderSavedMap("main"); requestAnimationFrame(() => maps.main?.invalidateSize()) } if (v == "ward") wards(); if (v == "rankings") loadOfficerRankings(); if (v == "mine") mine(); if (v == "profile") profile(); if (v == "dash") loadOfficerDashboard(); if (v == "track" && cur) showT(cur, 1) }
 /* NAV */
 function nav() {
@@ -356,13 +356,26 @@ const mapDataCache = new Map();
 async function publicMapData(category, status) {
     const key = category + ":" + status, now = Date.now(), cached = mapDataCache.get(key);
     if (cached?.expires > now) return cached.promise;
-    const promise = fetch("/api/complaints/map?category=" + encodeURIComponent(category) + "&status=" + encodeURIComponent(status)).then(async response => {
-        const payload = await response.json(); if (!response.ok) throw new Error(payload.error?.message || "Public reports could not be loaded."); return payload;
+    const controller = new AbortController();
+    let timeoutId;
+    const request = fetch("/api/complaints/map?category=" + encodeURIComponent(category) + "&status=" + encodeURIComponent(status), { signal: controller.signal, cache: "no-store" }).then(async response => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error?.message || "Public reports could not be loaded.");
+        if (!payload || !Array.isArray(payload.reports)) throw new Error("The public reports response was incomplete. Please try again.");
+        return payload;
     });
+    const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => { controller.abort(); reject(new Error("Public reports took too long to load. Please try again.")); }, 10000);
+    });
+    const promise = Promise.race([request, timeout]).finally(() => clearTimeout(timeoutId));
     mapDataCache.set(key, { expires: now + 30000, promise });
-    try { return await promise; } catch (error) { mapDataCache.delete(key); throw error; }
-}
-async function renderSavedMap(which) {
+    try { return await promise; } catch (error) {
+        // Keep failures briefly cached so the five-second page refresh loop does not
+        // erase the error message and immediately start another hanging request.
+        mapDataCache.set(key, { expires: Date.now() + 15000, promise });
+        throw error;
+    }
+}async function renderSavedMap(which) {
     const map = maps[which]; if (!map) return;
     const statusNode = $(which === "home" ? "#homeMapMessage" : which === "explore" ? "#exploreMapMessage" : "#mapMessage");
     if (statusNode) statusNode.textContent = "Loading public reportsâ€¦";

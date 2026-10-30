@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "CivicTrack — Civic Issue Platform",
+  "short_name": "CivicTrack",
+  "description": "Report local civic issues and follow their progress.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f3",
+  "theme_color": "#15352d",
+  "icons": [
+    {
+      "src": "/icons/civictrack.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
