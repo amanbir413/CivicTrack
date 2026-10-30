@@ -265,6 +265,17 @@ The production stack requires unique secrets, disables demo accounts, does not p
 
 Public rankings are derived from feedback left by the citizen who confirmed each case. They represent service experience and are not proof of an officer's honesty. Password recovery and email delivery require an organization mail provider and are not configured here.
 
+### Deploy the frontend to Vercel
+
+Vercel serves the static frontend; the Express API and PostgreSQL database must remain on a backend host. The checked-in `vercel.json` proxies `/api/*` requests to the Render service, so authentication cookies stay same-origin and no browser CORS configuration is needed.
+
+1. Deploy the backend and database using the Render Blueprint steps below, and wait for the Render service to become healthy.
+2. Confirm `https://civictrack.onrender.com/api/health` returns a connected database. If Render assigned a different service URL, update the API rewrite destination in `vercel.json` to that URL.
+3. Import this repository into Vercel. Use the repository root, the **Other** framework preset, and no build command; Vercel serves the static files from the repository root.
+4. Open your Vercel deployment and check `/api/health`. It should return the same healthy response through the proxy.
+
+Do not configure Vercel to run `npm start` or `npm run db:migrate`: Vercel hosts the frontend here, while Render runs the Docker backend, applies migrations, and connects to the managed PostgreSQL database.
+
 ### Deploy CivicTrack to a phone with Render
 
 The repository includes `render.yaml` for a Render deployment in Singapore. It creates the web app, managed PostgreSQL database, and persistent private evidence disk. Render provides HTTPS, which is required by mobile browsers for camera, location, and installable PWA features. The web service and database use paid plans; Render's published July 2026 estimate for this setup is about $13/month before bandwidth and storage growth. Check [Render pricing](https://render.com/pricing) before creating resources.
