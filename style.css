@@ -148,15 +148,19 @@ textarea:focus {
 
 header select {
     width: auto;
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--txt);
-    border: 1px solid var(--line);
+    background: #162432;
+    color: #f2ede4;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 header select option {
-    background: #111d28;
-    color: var(--txt);
+    background-color: #111d28 !important;
+    color: #f2ede4 !important;
+    padding: 8px 12px;
 }
 
 .auth-actions {
@@ -590,14 +594,35 @@ tr.r:hover {
 }
 
 .drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     border: 2px dashed rgba(255, 255, 255, 0.2);
     border-radius: 14px;
-    padding: 26px;
+    padding: 26px 20px;
+    margin: 14px 0 10px;
     text-align: center;
     cursor: pointer;
     background: rgba(255, 255, 255, 0.02);
     color: var(--mut);
     transition: border-color .2s, background .2s, color .2s;
+    box-sizing: border-box;
+}
+
+#v-report #stepT {
+    display: block;
+    margin: 18px 0 14px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--txt);
+    line-height: 1.35;
+}
+
+#v-report #photoNotice {
+    margin: 6px 0 14px;
+    line-height: 1.5;
 }
 
 .drop:hover {
@@ -1425,8 +1450,8 @@ body.landing-active header { background: #0a1119ee; color: var(--landing-cream);
 body.landing-active .brand, body.landing-active .auth-actions .mut { color: var(--landing-cream); }
 body.landing-active nav button { color: #b9c2cb; }
 body.landing-active nav button.on, body.landing-active nav button:hover { color: var(--landing-orange); background: #ffffff12; }
-body.landing-active header select { background: #ffffff12; color: var(--landing-cream); }
-body.landing-active header select option { color: var(--landing-ink); }
+body.landing-active header select { background: #162432; color: #f2ede4; border: 1px solid rgba(255, 255, 255, 0.2); }
+body.landing-active header select option { background-color: #111d28 !important; color: #f2ede4 !important; }
 body.landing-active .auth-actions .btn { color: var(--landing-cream); border-color: #ffffff45; }
 body.landing-active .auth-actions .btn:hover { background: #ffffff12; }
 body.landing-active main { max-width: none; padding: 0; }
@@ -1515,7 +1540,7 @@ body.landing-active #prog { background: var(--landing-orange); }
 .landing-problem { color: var(--landing-ink); background: var(--landing-cream); padding: clamp(82px, 13vw, 170px) 5vw; }
 .problem-layout { display: grid; grid-template-columns: .45fr 1.2fr .3fr; gap: 20px; align-items: start; }
 .problem-layout .landing-eyebrow { color: #96572f; }
-.problem-layout h2 { max-width: 850px; font-size: clamp(44px, 7.3vw, 98px); line-height: .98; letter-spacing: -.06em; margin: 0 !important; text-wrap: balance; }
+.problem-layout h2 { max-width: 850px; font-size: clamp(44px, 7.3vw, 98px); line-height: .98; letter-spacing: -.06em; margin: 0 !important; text-wrap: balance; word-break: normal; overflow-wrap: normal; hyphens: none; }
 .problem-copy { grid-column: 2; max-width: 480px; color: #535a5e; font-size: clamp(17px, 1.7vw, 22px); line-height: 1.55; }
 .problem-index { grid-column: 3; grid-row: 1 / span 2; justify-self: end; color: #7c8589; font: 11px ui-monospace, monospace; }
 /* ── SECTION C: PLATFORM INDICATORS (REAL RECORDS. REAL TRANSPARENCY.) ── */
@@ -1615,6 +1640,13 @@ body.landing-active #prog { background: var(--landing-orange); }
 
 .landing-workflow { padding: clamp(80px, 12vw, 150px) 5vw; color: var(--landing-ink); background: #e9e3d9; }
 .landing-workflow .landing-eyebrow { color: #96572f; }
+.landing-workflow h2,
+.landing-shortcuts h2 {
+    font-size: clamp(42px, 6vw, 72px);
+    line-height: 1;
+    letter-spacing: -.055em;
+    text-wrap: balance;
+}
 .landing-workflow h2 { max-width: 900px; margin-bottom: 58px !important; }
 .workflow-line { display: grid; grid-template-columns: repeat(4, 1fr); position: relative; gap: 0; }
 .workflow-line::before { content: ""; position: absolute; height: 1px; background: #a6a49d; left: 0; right: 0; top: 17px; }
@@ -1639,13 +1671,13 @@ body.landing-active #prog { background: var(--landing-orange); }
 .landing-search { display: flex; max-width: 800px; gap: 10px; margin-bottom: 14px; }
 .landing-search input { min-width: 0; color: var(--landing-ink); background: #fff; }
 .landing-search .btn { flex: none; }
-.landing-shortcuts .chips { margin: 10px 0 38px; }
+.landing-shortcuts .chips { justify-content: flex-start; max-width: 800px; margin: 10px 0 38px; }
 .landing-shortcuts .chips span { background: #e4ddd2; color: #394047; }
 .landing-shortcuts h3 { margin: 26px 0 12px !important; font-size: 17px; }
 .landing-shortcuts #cats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .landing-shortcuts #cats .card { background: #fffdfa; color: var(--landing-ink); border-color: #ded8ce; }
 .landing-final { padding: clamp(85px, 13vw, 160px) 5vw; color: var(--landing-cream); background: radial-gradient(ellipse at 75% 50%, #273744, #101b26 60%, #0a1119); }
-.landing-final h2 { max-width: 900px; font-size: clamp(54px, 8vw, 104px); line-height: .92; letter-spacing: -.06em; margin-bottom: 22px !important; }
+.landing-final h2 { max-width: 900px; font-size: clamp(54px, 8vw, 104px); line-height: .92; letter-spacing: -.06em; margin-bottom: 22px !important; text-wrap: balance; word-break: normal; overflow-wrap: normal; hyphens: none; }
 .landing-final > div > p:not(.landing-eyebrow) { color: #bac4cb; font-size: 18px; margin-bottom: 30px !important; }
 .landing-final .landing-secondary { color: var(--landing-cream); }
 .landing-active #toast { z-index: 100; }
@@ -1814,7 +1846,8 @@ body.landing-active #prog { background: var(--landing-orange); }
 @keyframes char-up {
     to { opacity: 1; transform: translateY(0) rotateX(0deg); }
 }
-.char-reveal { overflow: visible; display: block; perspective: 400px; }
+.char-reveal { overflow: visible; display: block; perspective: 400px; word-break: normal; overflow-wrap: normal; hyphens: none; }
+.char-reveal .char-word { display: inline-block; white-space: nowrap; }
 
 /* ── 8. Ripple Effect on All .btn clicks ── */
 .btn {
@@ -1839,7 +1872,7 @@ body.landing-active #prog { background: var(--landing-orange); }
     inset: 0;
     z-index: 9999;
     pointer-events: none;
-    background: radial-gradient(circle, #4F46E5 0%, #06B6D4 60%);
+    background: radial-gradient(circle at 50% 50%, #2a313a 0%, #1c2229 55%, #10141a 100%);
     clip-path: circle(0% at 50% 50%);
     opacity: 0;
     transition: none;
@@ -1889,7 +1922,7 @@ body.landing-active #prog { background: var(--landing-orange); }
 #prog {
     transition: width 0.06s linear, opacity 0.4s ease;
     height: 3px;
-    box-shadow: 0 0 8px #4F46E5, 0 0 16px #06B6D460;
+    box-shadow: 0 0 8px var(--landing-orange), 0 0 14px rgba(240, 163, 108, 0.4);
 }
 #prog.prog-animating {
     transition: width 0.6s cubic-bezier(0.1, 0.9, 0.2, 1);
@@ -2003,6 +2036,7 @@ body.dept:not(.landing-active) {
 
     .landing-blob { animation: none !important; }
 
+    .char-reveal .char-word { display: inline-block; white-space: nowrap; }
     .char-reveal .char { animation: none !important; opacity: 1 !important; transform: none !important; }
 
     .btn .ripple-wave { animation: none !important; }

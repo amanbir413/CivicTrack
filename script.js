@@ -64,7 +64,7 @@ function updateSession() {
     role = ["officer", "administrator"].includes(currentUser?.role) ? "dept" : "cit";
     document.body.classList.toggle("dept", role === "dept");
     $("#brandT").textContent = currentUser?.department?.name || (currentUser?.role === "administrator" ? "Administrator" : "CivicTrack");
-    $("#sessionLabel").textContent = currentUser ? `${currentUser.name} Â· ${currentUser.role}` : "Not signed in";
+    $("#sessionLabel").textContent = currentUser ? `${currentUser.name} · ${currentUser.role}` : "Not signed in";
     $("#authOpen").hidden = Boolean(currentUser); $("#logout").hidden = !currentUser; nav();
 }
 function go(v) {
@@ -72,8 +72,9 @@ function go(v) {
     if ((v === "dash" || v === "mine") && !currentUser) { toast("Sign in to view this page"); v = "auth"; }
     if (v === "dash" && !["officer", "administrator"].includes(currentUser?.role)) { toast("This page is for department staff"); v = "home"; }
     if (v === "mine" && currentUser?.role !== "citizen") v = "home";
-    view = v; document.body.classList.toggle("landing-active", v === "home"); $$(".view").forEach(e => e.classList.toggle("on", e.id == "v-" + v)); nav(); if (v == "report") wiz(1); animOn(); paint(); reveal(); scrollTo(0, 0); requestAnimationFrame(() => { ["home", "explore"].forEach(name => { if (v === "home") maps[name]?.invalidateSize(); }); maps[v === "report" ? "pick" : v === "map" ? "main" : ""]?.invalidateSize(); });
+    view = v; document.body.classList.toggle("landing-active", v === "home"); $$(".view").forEach(e => e.classList.toggle("on", e.id == "v-" + v)); nav(); if (v == "report") wiz(1); animOn(); paint(); reveal(); scrollTo(0, 0); window.civicI18n?.localize(document.getElementById("v-" + v) || document.body); requestAnimationFrame(() => { ["home", "explore"].forEach(name => { if (v === "home") maps[name]?.invalidateSize(); }); maps[v === "report" ? "pick" : v === "map" ? "main" : ""]?.invalidateSize(); });
 }
+window.go = go;
 $("#authOpen").onclick = () => go("auth");
 $("#logout").onclick = async () => { await fetch("/api/auth/logout", { method: "POST" }).catch(() => {}); currentUser = null; updateSession(); toast("Signed out"); go("home"); };
 async function loadSession() { try { const response = await fetch("/api/auth/me"); if (!response.ok) throw new Error(); currentUser = (await response.json()).user; } catch { currentUser = null; } updateSession(); }
@@ -95,7 +96,21 @@ $("#registerForm").onsubmit = event => { event.preventDefault(); submitAuth(even
 $("#openRegister").onclick = () => go("register");
 $("#openLogin").onclick = () => go("auth");
 $$('footer [data-view]').forEach(link => link.addEventListener("click", event => { event.preventDefault(); go(link.dataset.view); }));
-window.refreshLocalizedUI = () => { LG = window.CIVIC_LANGUAGE || "en"; nav(); if (view === "home") { if (maps.home) renderSavedMap("home"); if (maps.explore) renderSavedMap("explore"); } if (view === "map" && maps.main) renderSavedMap("main"); };
+window.refreshLocalizedUI = () => {
+    LG = window.CIVIC_LANGUAGE || "en";
+    nav();
+    renderCats();
+    if (view === "home") {
+        if (maps.home) renderSavedMap("home");
+        if (maps.explore) renderSavedMap("explore");
+        loadPublicMetrics();
+    }
+    if (view === "report") {
+        wiz(R.step);
+    }
+    if (view === "map" && maps.main) renderSavedMap("main");
+    window.civicI18n?.localize(document.body);
+};
 $("#lang").onchange = event => window.civicI18n?.setLanguage(event.currentTarget.value);
 const supportEmail = document.querySelector('meta[name="support-email"]')?.content.trim() || "";
 if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(supportEmail)) {
@@ -166,7 +181,7 @@ function showMapReport(report, which = "main") {
     const title = document.createElement("h3"); title.textContent = report.ticketId;
     const summary = document.createElement("p"), category = document.createElement("b"); category.textContent = report.category?.label || "Issue";
     const statusName = publicStatusName(report.status);
-    summary.append(category, document.createTextNode(" Â· " + (window.civicI18n?.translate(statusName) || statusName)));
+    summary.append(category, document.createTextNode(" · " + (window.civicI18n?.translate(statusName) || statusName)));
     const privacy = document.createElement("p"); privacy.className = "mut"; privacy.textContent = "Approximate map location; no reporter details are public.";
     const track = document.createElement("button"); track.type = "button"; track.className = "btn rust"; track.textContent = "Open ticket timeline"; track.addEventListener("click", () => trackSavedComplaint(report.ticketId));
     target.append(eyebrow, title, summary, privacy, track); target.hidden = false;
@@ -217,7 +232,7 @@ async function renderSavedMap(which) {
             const activate = () => { if (activeMarker) { activeMarker.setStyle({ radius: 8, weight: 2 }); activeMarker.getElement()?.classList.remove("is-selected"); } activeMarker = marker; marker.setStyle({ radius: 11, weight: 3 }); marker.getElement()?.classList.add("is-selected"); showMapReport(report, which); };
             marker.on("click", activate).on("add", () => {
                 const path = marker.getElement(); if (!path) return;
-                path.setAttribute("tabindex", "0"); path.setAttribute("role", "button"); path.setAttribute("aria-label", [report.ticketId, window.civicI18n?.translate(report.category?.label || "Issue") || report.category?.label || "Issue", window.civicI18n?.translate(publicStatusName(report.status)) || publicStatusName(report.status), window.civicI18n?.translate("Approximate public location.") || "Approximate public location."].join(" Â· "));
+                path.setAttribute("tabindex", "0"); path.setAttribute("role", "button"); path.setAttribute("aria-label", [report.ticketId, window.civicI18n?.translate(report.category?.label || "Issue") || report.category?.label || "Issue", window.civicI18n?.translate(publicStatusName(report.status)) || publicStatusName(report.status), window.civicI18n?.translate("Approximate public location.") || "Approximate public location."].join(" · "));
                 path.style.setProperty("--marker-delay", Math.min(markerIndex++ * 24, 650) + "ms");
                 path.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activate(); } });
                 path.addEventListener("focus", activate); path.addEventListener("mouseenter", activate);
@@ -229,7 +244,7 @@ async function renderSavedMap(which) {
 }
 const ST = ["Add a photo", "Pin the location", "Confirm category", "Done!"];
 function wiz(n) {
-    R.step = n; $("#steps").innerHTML = [1, 2, 3].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join(""); $("#stepT").textContent = n < 4 ? `Step ${n} of 3 Â· ${ST[n - 1]}` : "Ticket created";[1, 2, 3, 4].forEach(i => $("#s" + i).hidden = i != n); $("#wizBtns").style.display = n == 4 ? "none" : "flex"; $("#back").style.visibility = n == 1 ? "hidden" : "visible"; $("#next").textContent = n == 3 ? "Submit" : "Next";
+    R.step = n; $("#steps").innerHTML = [1, 2, 3].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join(""); $("#stepT").textContent = n < 4 ? `Step ${n} of 3 · ${ST[n - 1]}` : "Ticket created";[1, 2, 3, 4].forEach(i => $("#s" + i).hidden = i != n); $("#wizBtns").style.display = n == 4 ? "none" : "flex"; $("#back").style.visibility = n == 1 ? "hidden" : "visible"; $("#next").textContent = n == 3 ? "Submit" : "Next";
     if (n == 2) { drawMap("#pickMap", 1); dupCheck() } if (n == 3) { catPick(); $("#sugg").textContent = "Suggested: " + cat(R.cat)[2] + " (you can change it)" }
 }
 async function dupCheck() {
@@ -243,7 +258,7 @@ async function dupCheck() {
         const suggestions = payload.suggestions || [];
         if (!suggestions.length) { $("#dupBox").innerHTML = '<p class="mut">No recent open ' + esc(cat(R.cat)[2]) + ' reports found within ' + payload.radiusMeters + ' m. You can continue with a separate report.</p>'; return; }
         let html = '<div class="duplicate-box"><h4>Similar nearby reports</h4><p class="mut">Same category, within ' + payload.radiusMeters + ' m and the previous ' + payload.lookbackDays + ' days. Suggestions never merge reports.</p>';
-        suggestions.forEach(item => { const distance = item.distanceMeters < 1000 ? item.distanceMeters + " m" : (item.distanceMeters / 1000).toFixed(1) + " km"; html += '<div class="duplicate-row"><b>' + esc(item.ticketId) + '</b><span>' + esc(item.category.label) + ' Â· ' + esc(item.status.replaceAll("_", " ")) + '</span><span>About ' + distance + ' away</span><button class="btn line duplicate-open" data-ticket="' + esc(item.ticketId) + '">View public ticket</button></div>'; });
+        suggestions.forEach(item => { const distance = item.distanceMeters < 1000 ? item.distanceMeters + " m" : (item.distanceMeters / 1000).toFixed(1) + " km"; html += '<div class="duplicate-row"><b>' + esc(item.ticketId) + '</b><span>' + esc(item.category.label) + ' · ' + esc(item.status.replaceAll("_", " ")) + '</span><span>About ' + distance + ' away</span><button class="btn line duplicate-open" data-ticket="' + esc(item.ticketId) + '">View public ticket</button></div>'; });
         $("#dupBox").innerHTML = html + '<p class="mut">Still reporting a separate issue? Continue below; nothing will be merged.</p></div>';
         $$(".duplicate-open").forEach(button => button.onclick = () => trackSavedComplaint(button.dataset.ticket));
     } catch (error) { if (request === suggestionRequest) $("#dupBox").innerHTML = '<p class="form-error" role="alert">' + esc(error.message) + ' You can continue reporting.</p>'; }
@@ -254,7 +269,13 @@ $("#manualLocationUse").onclick = () => {
     setReportLocation(Number($("#manualLat").value), Number($("#manualLng").value));
 };
 function plus(id) { const t = T.find(x => x.id == id); t.plus++; t.ev.push([now(), "Another citizen reported the same issue (+1)"]); toast("Merged into #" + id); openT(id) }
-function catPick() { $("#catPick").innerHTML = CATS.map(c => `<div class="card cat ${c[0] == R.cat ? "on" : ""}" data-c="${c[0]}">${catIcon(c[0])}<span class="cat-label">${c[2]}</span></div>`).join(""); $$("#catPick .cat").forEach(e => e.onclick = () => { R.cat = e.dataset.c; catPick() }) }
+function catPick() {
+    $("#catPick").innerHTML = CATS.map(c => {
+        const localizedLabel = window.civicI18n ? window.civicI18n.translate(c[2]) : c[2];
+        return `<div class="card cat ${c[0] == R.cat ? "on" : ""}" data-c="${c[0]}">${catIcon(c[0])}<span class="cat-label">${localizedLabel}</span></div>`;
+    }).join("");
+    $$("#catPick .cat").forEach(e => e.onclick = () => { R.cat = e.dataset.c; catPick() });
+}
 $("#file").onchange = e => { const f = e.target.files[0]; if (f) $("#drop").innerHTML = `<img src="${URL.createObjectURL(f)}"><input type="file" accept="image/*" hidden id="file">` };
 $("#desc").oninput = e => { R.cat = guess(e.target.value); if (R.step === 3) { catPick(); dupCheck(); } };
 $("#mic").onclick = () => { const S = window.SpeechRecognition || window.webkitSpeechRecognition; if (!S) return toast("Voice input not supported in this browser"); const r = new S(); r.onresult = e => { $("#desc").value = e.results[0][0].transcript; R.cat = guess($("#desc").value) }; r.start(); toast("Listeningâ€¦") };
@@ -289,7 +310,7 @@ $("#next").onclick = async () => {
 
         const complaint = payload.complaint;
         $("#tkId").textContent = complaint.ticketId;
-        $("#tkDue").textContent = `Assigned to ${complaint.department.name} Â· Due ${new Date(complaint.dueAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} (demo SLA)`;
+        $("#tkDue").textContent = `Assigned to ${complaint.department.name} · Due ${new Date(complaint.dueAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} (demo SLA)`;
         $("#tkStatus").textContent = `Status: ${complaint.status.replaceAll("_", " ")}`;
         $("#tkGo").onclick = () => trackSavedComplaint(complaint.ticketId);
         mkQR(complaint.ticketId);
@@ -301,7 +322,7 @@ $("#next").onclick = async () => {
         wiz(4);
         toast("Complaint saved");
         refreshSavedMaps();
-        notify(`âœ… ${complaint.ticketId} saved Â· assigned to ${complaint.department.name}`, complaint.ticketId);
+        notify(`âœ… ${complaint.ticketId} saved · assigned to ${complaint.department.name}`, complaint.ticketId);
     } catch (error) {
         formError.textContent = error.message.includes("Failed to fetch")
             ? "The complaint service is unavailable. Check that the server and database are running, then try again."
@@ -317,9 +338,9 @@ let cur = null; function openT(id) { go("track"); $("#tid").value = id; showT(id
 function showT(id, quiet) {
     const t = T.find(x => x.id == id); cur = id; if (!t) return $("#tview").innerHTML = '<p class="card" style="max-width:640px;margin:14px auto">Ticket not found.</p>';
     const pend = t.st < 3 ? `<div class="pend">${t.lv < 3 ? "Escalation if overdue" : "Public critical flag"}</div><div class="pend">Resolved + proof</div>` : "";
-    $("#tview").innerHTML = `<p class="mut">Illustrative browser-only demo ticket; this record is not saved in PostgreSQL.</p><div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">#${t.id} Â· ${cat(t.c)[1]} ${t.title} Â· Ward ${t.ward}</h3><div>${stTag(t)} <b>${dueTxt(t)}</b></div></div></div>
+    $("#tview").innerHTML = `<p class="mut">Illustrative browser-only demo ticket; this record is not saved in PostgreSQL.</p><div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">#${t.id} · ${cat(t.c)[1]} ${t.title} · Ward ${t.ward}</h3><div>${stTag(t)} <b>${dueTxt(t)}</b></div></div></div>
  <div class="two" style="margin-top:14px"><div class="card"><h3>Timeline</h3><div class="tl">${t.ev.map(e => `<div class="${e[1].includes("âš ï¸") ? "bad" : ""}"><b>${e[1]}</b><br><span class="mut">${new Date(e[0]).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</span></div>`).join("")}${pend}</div></div>
- <div class="card"><h3>Responsible officer</h3><p><b>${LV[t.lv]}</b> Â· ${cat(t.c)[3]}</p><h3>Escalation ladder</h3><div class="lad">${LV.map((l, i) => `<span class="${i == t.lv && t.st < 3 ? "on" : i < t.lv || t.st >= 3 ? "done" : ""}">L${i}</span>`).join("")}</div><p class="mut">Now: ${LV[t.lv]} Â· next: ${LV[t.lv + 1] || "Public flag"}</p><h3>Photos</h3><div class="row" style="flex-wrap:nowrap"><div style="flex:1">${ph(t.c, 0)}</div><div style="flex:1">${t.st >= 3 ? ph(t.c, 1) : '<div class="mut" style="height:100%;min-height:80px;border-radius:10px;background:var(--line);display:grid;place-items:center">After: pending</div>'}</div></div>
+ <div class="card"><h3>Responsible officer</h3><p><b>${LV[t.lv]}</b> · ${cat(t.c)[3]}</p><h3>Escalation ladder</h3><div class="lad">${LV.map((l, i) => `<span class="${i == t.lv && t.st < 3 ? "on" : i < t.lv || t.st >= 3 ? "done" : ""}">L${i}</span>`).join("")}</div><p class="mut">Now: ${LV[t.lv]} · next: ${LV[t.lv + 1] || "Public flag"}</p><h3>Photos</h3><div class="row" style="flex-wrap:nowrap"><div style="flex:1">${ph(t.c, 0)}</div><div style="flex:1">${t.st >= 3 ? ph(t.c, 1) : '<div class="mut" style="height:100%;min-height:80px;border-radius:10px;background:var(--line);display:grid;place-items:center">After: pending</div>'}</div></div>
  ${t.st >= 3 && !t.ok ? `<h3>Is this fixed?</h3><div class="row"><button class="btn grn" onclick="confirmT(${t.id})">Yes, confirm</button><button class="btn rust" onclick="reopen(${t.id})">Reopen</button></div>` : t.ok ? "<p>âœ… Closed â€” thank you!</p>" : ""}</div></div>`
 }
 function renderSavedComplaint(complaint) {
@@ -341,7 +362,7 @@ function renderSavedComplaint(complaint) {
     const state = complaint.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : complaint.isOverdue ? '<p class="od">This complaint is overdue and awaiting department action.</p>' : '';
     const evidence = (complaint.evidence || []).map(item => `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="Resolution evidence"></a>`).join("");
     const responseControls = complaint.viewerIsOwner && complaint.status === "resolution_pending_confirmation" ? `<div class="row"><button class="btn grn" onclick="respondToResolution('${esc(complaint.ticketId)}','confirm')">Confirm resolution</button><button class="btn rust" onclick="respondToResolution('${esc(complaint.ticketId)}','reject')">Reject and reopen</button></div><p class="mut">Review the department evidence before responding.</p>` : complaint.viewerIsOwner && complaint.status === "closed" ? '<p>âœ… You confirmed this resolution.</p>' : '';
-    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} Â· ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} Â· <b>Department:</b> ${esc(complaint.department.name)}</p>${due}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
+    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
 }
 async function respondToResolution(ticketId, decision) {
     const promptNote = decision === "reject" ? window.prompt("What remains unresolved? (optional)") : "";
@@ -386,10 +407,10 @@ async function mine() {
         const response = await fetch("/api/complaints/mine"); const payload = await response.json();
         if (!response.ok) throw new Error(payload.error?.message || "Could not load your reports.");
         const complaints = payload.complaints || [];
-        $("#mine").innerHTML = complaints.length ? complaints.map(c => `<div class="card" style="margin-bottom:12px"><div class="row" style="justify-content:space-between"><b>${esc(c.ticketId)} Â· ${esc(c.title)}</b><span>${esc(c.status.replaceAll("_", " "))}</span></div><p class="mut">${esc(c.category.label)} Â· ${esc(c.department.name)}</p><button class="btn line" onclick="trackSavedComplaint('${esc(c.ticketId)}')">View status</button></div>`).join("") : '<div class="card" style="text-align:center;padding:40px"><div style="font-size:46px">ðŸ“­</div><p class="mut">No reports yet.</p><button class="btn rust" onclick="go(\'report\')">Report a problem</button></div>';
+        $("#mine").innerHTML = complaints.length ? complaints.map(c => `<div class="card" style="margin-bottom:12px"><div class="row" style="justify-content:space-between"><b>${esc(c.ticketId)} · ${esc(c.title)}</b><span>${esc(c.status.replaceAll("_", " "))}</span></div><p class="mut">${esc(c.category.label)} · ${esc(c.department.name)}</p><button class="btn line" onclick="trackSavedComplaint('${esc(c.ticketId)}')">View status</button></div>`).join("") : '<div class="card" style="text-align:center;padding:40px"><div style="font-size:46px">ðŸ“­</div><p class="mut">No reports yet.</p><button class="btn rust" onclick="go(\'report\')">Report a problem</button></div>';
     } catch (error) { $("#mine").innerHTML = `<p class="card" role="alert">${esc(error.message)}</p>`; }
 }
-function wards() { const w = []; for (let i = 1; i <= 12; i++) { const a = T.filter(t => t.ward == i); const od = a.filter(t => t.st < 3 && left(t) < 0).length; w.push([i, a.length ? Math.round(100 - od / a.length * 100) : 100, a.length]) } w.sort((a, b) => b[1] - a[1]); $("#wards").innerHTML = w.map((x, i) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"][i] || i + 1 + "."} Ward ${x[0]}</b><span>${x[1]}% on time Â· ${x[2]} issues</span></div><div class="meter"><i style="width:${x[1]}%;background:${x[1] > 80 ? "var(--green)" : x[1] > 50 ? "var(--amber)" : "var(--red)"}"></i></div></div>`).join("") }
+function wards() { const w = []; for (let i = 1; i <= 12; i++) { const a = T.filter(t => t.ward == i); const od = a.filter(t => t.st < 3 && left(t) < 0).length; w.push([i, a.length ? Math.round(100 - od / a.length * 100) : 100, a.length]) } w.sort((a, b) => b[1] - a[1]); $("#wards").innerHTML = w.map((x, i) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"][i] || i + 1 + "."} Ward ${x[0]}</b><span>${x[1]}% on time · ${x[2]} issues</span></div><div class="meter"><i style="width:${x[1]}%;background:${x[1] > 80 ? "var(--green)" : x[1] > 50 ? "var(--amber)" : "var(--red)"}"></i></div></div>`).join("") }
 /* DEPT */
 async function loadOfficerDashboard() {
     $("#v-dash > .row h2").textContent = currentUser?.role === "administrator" ? "Administration and accountability" : "Department work queue";
@@ -405,7 +426,7 @@ async function loadOfficerDashboard() {
             const m = op.overview; $("#kpi").innerHTML = [["Total complaints",m.totalComplaints],["Open",m.openComplaints],["Overdue",m.overdueComplaints],["Escalated",m.escalatedComplaints],["Closed",m.closedComplaints],["Within SLA",m.resolvedWithinSlaPercent == null ? "â€”" : `${m.resolvedWithinSlaPercent}%`],["Avg resolution",m.averageResolutionHours == null ? "â€”" : `${m.averageResolutionHours} h`],["Citizen confirmed",m.citizenConfirmedClosures],["Reopened",m.reopenedComplaints]].map(k => `<div class="card stat"><b>${esc(k[1])}</b>${k[0]}</div>`).join("");
         } else $("#kpi").innerHTML = [["Open", open], ["Assigned", counts.assigned || 0], ["In progress", counts.in_progress || 0], ["Awaiting confirmation", counts.resolution_pending_confirmation || 0], ["Reopened", counts.reopened || 0]].map(k => `<div class="card stat"><b>${k[1]}</b>${k[0]}</div>`).join("");
         const queue = queuePayload.queue || [];
-        $("#queue").innerHTML = queue.length ? queue.map(c => `<tr><td>${esc(c.ticketId)}</td><td>${esc(c.category.label)} Â· ${esc(c.title)}</td><td>${esc(c.department.name)}</td><td>${new Date(c.dueAt).toLocaleString("en-IN")}</td><td>${esc(c.status.replaceAll("_", " "))}${c.isEscalated ? ' Â· <b class="od">Escalated</b>' : c.isOverdue ? ' Â· <b class="od">Overdue</b>' : ''}</td><td><button class="btn line" onclick="dOpen('${esc(c.ticketId)}')">Open</button></td></tr>`).join("") : '<tr><td colspan="6">No complaints in this queue.</td></tr>';
+        $("#queue").innerHTML = queue.length ? queue.map(c => `<tr><td>${esc(c.ticketId)}</td><td>${esc(c.category.label)} · ${esc(c.title)}</td><td>${esc(c.department.name)}</td><td>${new Date(c.dueAt).toLocaleString("en-IN")}</td><td>${esc(c.status.replaceAll("_", " "))}${c.isEscalated ? ' · <b class="od">Escalated</b>' : c.isOverdue ? ' · <b class="od">Overdue</b>' : ''}</td><td><button class="btn line" onclick="dOpen('${esc(c.ticketId)}')">Open</button></td></tr>`).join("") : '<tr><td colspan="6">No complaints in this queue.</td></tr>';
     } catch (error) { $("#queue").innerHTML = `<tr><td colspan="6" role="alert">${esc(error.message)}</td></tr>`; }
 }
 async function dOpen(ticketId) {
@@ -419,7 +440,7 @@ async function dOpen(ticketId) {
             ? `GPS ${esc(c.location.latitude)}, ${esc(c.location.longitude)}`
             : c.location?.mapX != null ? `Schematic map position ${Math.round(c.location.mapX)}, ${Math.round(c.location.mapY)}` : "No location details saved";
         const images = (c.evidence || []).map(item => `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="Uploaded resolution evidence"></a>`).join("");
-        $("#dBody").innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.ticketId)} Â· ${esc(c.title)}</h3><button class="btn line" onclick="dClose()">Close</button></div><p><b>${esc(c.category.label)}</b> Â· ${esc(c.department.name)} Â· ${esc(status.replaceAll("_", " "))}</p>${c.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : c.isOverdue ? '<p class="od">Overdue Â· escalation check pending.</p>' : ''}<p>${esc(c.description || "No additional description.")}</p><p><b>Reported location:</b> ${location}</p><p>Target deadline: ${new Date(c.dueAt).toLocaleString("en-IN")} (demonstration SLA)</p><h4>Resolution evidence</h4><div class="evidence-gallery">${images || '<p class="mut">No evidence uploaded.</p>'}</div>${canComplete ? `<label class="btn line" for="evidenceFile">Upload evidence</label><input id="evidenceFile" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="uploadEvidence('${esc(c.ticketId)}',this)"><p class="mut">JPEG, PNG or WebP; maximum 5 MB.</p>` : ''}<div class="tl" style="margin-top:16px">${events}</div>${canStart ? `<button class="btn rust" onclick="act('${esc(c.ticketId)}','in_progress')">${status === 'reopened' ? 'Resume work' : 'Start work'}</button>` : ""}${canComplete ? `<button class="btn grn" onclick="act('${esc(c.ticketId)}','resolution_pending_confirmation')">Submit for citizen confirmation</button>` : ""}`;
+        $("#dBody").innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.ticketId)} · ${esc(c.title)}</h3><button class="btn line" onclick="dClose()">Close</button></div><p><b>${esc(c.category.label)}</b> · ${esc(c.department.name)} · ${esc(status.replaceAll("_", " "))}</p>${c.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : c.isOverdue ? '<p class="od">Overdue · escalation check pending.</p>' : ''}<p>${esc(c.description || "No additional description.")}</p><p><b>Reported location:</b> ${location}</p><p>Target deadline: ${new Date(c.dueAt).toLocaleString("en-IN")} (demonstration SLA)</p><h4>Resolution evidence</h4><div class="evidence-gallery">${images || '<p class="mut">No evidence uploaded.</p>'}</div>${canComplete ? `<label class="btn line" for="evidenceFile">Upload evidence</label><input id="evidenceFile" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="uploadEvidence('${esc(c.ticketId)}',this)"><p class="mut">JPEG, PNG or WebP; maximum 5 MB.</p>` : ''}<div class="tl" style="margin-top:16px">${events}</div>${canStart ? `<button class="btn rust" onclick="act('${esc(c.ticketId)}','in_progress')">${status === 'reopened' ? 'Resume work' : 'Start work'}</button>` : ""}${canComplete ? `<button class="btn grn" onclick="act('${esc(c.ticketId)}','resolution_pending_confirmation')">Submit for citizen confirmation</button>` : ""}`;
     } catch (error) { $("#dBody").innerHTML = `<p role="alert">${esc(error.message)}</p><button class="btn line" onclick="dClose()">Close</button>`; }
 }
 async function uploadEvidence(ticketId, input) {
@@ -442,7 +463,18 @@ async function act(ticketId, status) {
 }
 $("#queueRefresh").onclick = () => loadOfficerDashboard();
 $("#landingSearchAction").onclick = () => { const issue = $("#q").value.trim(); if (!issue) { $("#q").focus(); return; } R.cat = guess(issue); $("#desc").value = issue; go("report"); };
-$("#landing-explore-action").onclick = () => { const m = $("#landing-metrics"); if (m) m.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); else go("map"); };
+const categoryNavBtn = $("#landing-category-action") || $("#landing-explore-action");
+if (categoryNavBtn) {
+    categoryNavBtn.onclick = () => {
+        const shortcutsSec = $("#landing-shortcuts") || $("#cats");
+        if (shortcutsSec) {
+            shortcutsSec.scrollIntoView({
+                behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+                block: "start"
+            });
+        }
+    };
+}
 $$('.chips span').forEach(c => c.onclick = () => { $("#q").value = c.textContent; R.cat = guess(c.textContent); $("#desc").value = c.textContent; go("report") }); seed(); document.body.classList.toggle("landing-active", view === "home"); nav(); mapUI(); drawMap("#homeMap"); animOn(); loadSession().then(() => { if (["officer", "administrator"].includes(currentUser?.role)) go("dash"); });
 addEventListener("scroll", () => { const h = document.documentElement; $("#prog").style.width = h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight) * 100 + "%" });
 addEventListener("mousemove", e => { const c = e.target.closest && e.target.closest(".card"); if (c) { const r = c.getBoundingClientRect(); c.style.setProperty("--mx", e.clientX - r.left + "px"); c.style.setProperty("--my", e.clientY - r.top + "px") } });
@@ -612,7 +644,7 @@ loadPublicMetrics();
 reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
 
 /* ============================================================
-   CivicTrack Â· Animation Enhancement Pack (JS)
+   CivicTrack · Animation Enhancement Pack (JS)
    All code appended after existing script.js
    ============================================================ */
 
@@ -914,21 +946,41 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
         function splitChars(el) {
             if (el.dataset.charSplit) return;
             el.dataset.charSplit = '1';
-            const text = el.textContent;
+            const raw = (el.getAttribute('data-raw-title') || el.textContent).trim();
+            el.setAttribute('data-raw-title', raw);
             el.textContent = '';
             el.classList.add('char-reveal');
-            text.split('').forEach(ch => {
-                const span = document.createElement('span');
-                span.className = 'char';
-                span.textContent = ch === ' ' ? '\u00A0' : ch;
-                el.appendChild(span);
+
+            // Split into words by whitespace so individual words never break mid-word
+            const words = raw.split(/\s+/);
+            let charIndex = 0;
+
+            words.forEach((wordText, wIdx) => {
+                const wordWrap = document.createElement('span');
+                wordWrap.className = 'char-word';
+
+                for (const ch of wordText) {
+                    const span = document.createElement('span');
+                    span.className = 'char';
+                    span.textContent = ch;
+                    span.dataset.ci = String(charIndex++);
+                    wordWrap.appendChild(span);
+                }
+
+                el.appendChild(wordWrap);
+
+                // Insert standard breakable whitespace between words
+                if (wIdx < words.length - 1) {
+                    el.appendChild(document.createTextNode(' '));
+                }
             });
         }
 
         function revealChars(el) {
             splitChars(el);
-            el.querySelectorAll('.char').forEach((span, i) => {
-                span.style.animationDelay = (i * 28) + 'ms';
+            el.querySelectorAll('.char').forEach((span) => {
+                const idx = parseInt(span.dataset.ci || '0', 10);
+                span.style.animationDelay = (idx * 28) + 'ms';
                 span.style.animationPlayState = 'running';
             });
         }
