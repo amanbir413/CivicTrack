@@ -10,3 +10,6 @@ data/private-uploads/
 .DS_Store
 
 !.env.production.example
+
+dist/
+.vercel

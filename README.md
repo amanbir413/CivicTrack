@@ -267,11 +267,11 @@ Public rankings are derived from feedback left by the citizen who confirmed each
 
 ### Deploy the frontend to Vercel
 
-Vercel serves the static frontend; the Express API and PostgreSQL database must remain on a backend host. The checked-in `vercel.json` proxies `/api/*` requests to the Render service, so authentication cookies stay same-origin and no browser CORS configuration is needed.
+Vercel builds and serves only the static frontend from `dist`; the Express API and PostgreSQL database remain on a backend host. The checked-in `vercel.json` proxies `/api/*` requests to the Render service, so authentication cookies stay same-origin and no browser CORS configuration is needed.
 
 1. Deploy the backend and database using the Render Blueprint steps below, and wait for the Render service to become healthy.
 2. Confirm `https://civictrack.onrender.com/api/health` returns a connected database. If Render assigned a different service URL, update the API rewrite destination in `vercel.json` to that URL.
-3. Import this repository into Vercel. Use the repository root, the **Other** framework preset, and no build command; Vercel serves the static files from the repository root.
+3. Import this repository into Vercel using the repository root. The checked-in configuration selects the **Other** preset, builds the frontend, and sets `dist` as the output directory.
 4. Open your Vercel deployment and check `/api/health`. It should return the same healthy response through the proxy.
 
 Do not configure Vercel to run `npm start` or `npm run db:migrate`: Vercel hosts the frontend here, while Render runs the Docker backend, applies migrations, and connects to the managed PostgreSQL database.
