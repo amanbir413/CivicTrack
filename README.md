@@ -6,10 +6,12 @@ LogicLoops' Zinnovation 4.0 civic-tech MVP. The platform includes authenticated 
 
 - The Express server serves the existing frontend and the API from the same origin.
 - `POST /api/complaints` validates a report, assigns a department by category, calculates a demonstration SLA, stores the complaint and its initial event in one PostgreSQL transaction, and returns a ticket ID.
+- New complaints receive a critical/high/normal/low triage priority from Google Gemini when configured, or conservative local rules when no key is configured or the provider is unavailable. The recommendation and reason are stored with the complaint.
 - `GET /api/complaints/:ticketId` returns private details to the owner or authorized staff and a limited summary to other visitors.
 - `GET /api/health` checks the PostgreSQL connection.
 - The existing report wizard submits to the API for signed-in citizens; the tracking page retrieves saved tickets from PostgreSQL.
 - Officer queue and status controls are connected to the database and protected by role and department checks.
+- The officer queue sorts active work by triage priority, then overdue/deadline; department officers and administrators can change an active complaint's priority with a required reason, recorded in its audit history.
 - Sample issues and dashboard statistics from the original frontend are marked as illustrative browser-only demo data. They do not include new database reports.
 
 ## Phase 2 and Phase 3 capabilities
@@ -106,11 +108,14 @@ Authentication is cookie-based; same-origin browser requests use the session aut
 - `POST /api/auth/login` accepts `{ "email", "password" }`; `POST /api/auth/logout` clears the session cookie.
 - `GET /api/auth/me` returns the signed-in account profile and role.
 - `POST /api/complaints` requires a citizen session and saves the account as report owner.
+- The report request may include an interface `language` (`en`, `hi`, or `pa`) for the priority explanation; the server only accepts these known values.
+- Priority triage sends the issue title, description, and category to Google Gemini after obvious email addresses and phone numbers are removed. It does not send photos, GPS coordinates, or account details. Avoid putting sensitive personal information in a report. The feature is only a triage recommendation; it is not an emergency service or a final decision.
 - `GET /api/complaints/mine` returns that citizen's private reports.
 - `GET /api/complaints/:ticketId` remains available for ticket tracking. Owners, assigned department staff, and admins receive details permitted by their role; other visitors get the limited public summary.
 - `GET /api/officer/queue` and `GET /api/officer/counts` require an officer or administrator session. Officers are automatically scoped to their assigned department. Administrators can see all departments; `?departmentId=` narrows an administrator query.
 - `GET /api/officer/complaints/:ticketId` returns processing details only to the assigned department or an administrator.
 - `PATCH /api/officer/complaints/:ticketId/status` accepts `{ "status": "in_progress" }` or `{ "status": "resolution_pending_confirmation" }` when the transition is valid.
+- `PATCH /api/officer/complaints/:ticketId/priority` accepts `{ "priorityLevel": "high", "reason": "..." }` for an active complaint and is restricted to the assigned department or an administrator. The reason is required and audited.
 - `POST /api/officer/complaints/:ticketId/evidence` accepts a multipart `file` field with JPEG, PNG, or WebP up to 5 MB. Evidence must be uploaded while work is in progress.
 - `GET /api/evidence/:mediaId` serves evidence only to its complaint owner, an officer in the complaint department, or an administrator.
 - `POST /api/complaints/:ticketId/confirmation` accepts `{ "decision": "confirm" }` or `{ "decision": "reject", "note": "..." }` from the owning citizen while status is `resolution_pending_confirmation`.
@@ -129,6 +134,19 @@ Local filesystem storage remains the default. For private S3, set MEDIA_STORAGE_
 The adapter does not set a public ACL or expose bucket URLs. It signs requests and streams evidence through the existing authorized /api/evidence/:mediaId endpoint. Configure bucket encryption, lifecycle, and a least-privilege IAM policy in your account. No cloud resources or credentials are created or included by this project. Keep secrets in a secret manager or local .env file.
 
 For local deployment, Compose keeps evidence on the persistent civic_private_uploads volume. For hosted/serverless deployment, use private object storage and a durable PostgreSQL service. Local storage on ephemeral hosts will lose uploaded files.
+
+## Optional Google Gemini priority triage
+
+The AI recommendation is optional. Without a key, or when the API request times out or returns an invalid response, the server uses its local rules and still saves the complaint. Configure these values in the root `.env` file (copy `.env.example` if needed):
+
+```dotenv
+GEMINI_API_KEY=paste-your-private-key-here
+GEMINI_MODEL=gemini-3.5-flash-lite
+```
+
+Create the key in Google AI Studio and keep it server-side. The key is passed to the app container by Docker Compose. Do not place it in `script.js`, `index.html`, or any committed file. `.env` is excluded from Git; keep the key private. After editing `.env`, run `docker compose up -d --build app` from the repository folder to apply the setting. Check `docker compose logs -f app` for a short provider failure code; secrets and report contents are not logged.
+
+The officer queue ranks active reports first, then critical, high, normal, and low; overdue reports and nearer deadlines sort first within each level. The responsible officer can override the level and must provide a reason. This is a demonstration aid: officers must review the underlying report, and the score is not an official safety assessment.
 
 Unauthenticated ticket lookup intentionally omits the complaint description, saved location, event notes, and account identifiers. Ticket IDs are random but should still be treated as bearer references.
 
@@ -218,9 +236,10 @@ node --check server/server.js
 node --check server/routes/auth.js
 node --check server/routes/complaints.js
 node --check server/routes/officer.js
+node --check server/priority.js
 node --check script.js
 ```
 
-`npm test` runs request-validation and S3 adapter unit tests. If `TEST_DATABASE_URL` points to an isolated PostgreSQL test database, it creates a unique temporary schema, applies all four migrations, and runs authentication, privacy, geographic map/suggestion, evidence, escalation, workflow, and metrics integration checks. It drops only that generated schema and temporary upload directory. Database integration tests are skipped when `TEST_DATABASE_URL` is unset.
+`npm test` runs request-validation and S3 adapter unit tests. If `TEST_DATABASE_URL` points to an isolated PostgreSQL test database, it creates a unique temporary schema, applies all migrations, and runs authentication, privacy, geographic map/suggestion, evidence, escalation, workflow, and metrics integration checks. It drops only that generated schema and temporary upload directory. Database integration tests are skipped when `TEST_DATABASE_URL` is unset.
 
 GitHub Actions runs npm ci, npm run check, and the database-backed suite against PostgreSQL 16 for pushes and pull requests. This configuration prepares the app for deployment; it does not deploy it or make this MVP production-ready.

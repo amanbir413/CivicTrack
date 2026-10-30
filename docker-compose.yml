@@ -11,7 +11,7 @@ services:
     volumes:
       - civic_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civic} -d ${POSTGRES_DB:-civic_platform}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civic} -d ${POSTGRES_DB:-civic_platform}" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -33,7 +33,19 @@ services:
       DEMO_OFFICER_EMAIL: ${DEMO_OFFICER_EMAIL:-testdepartment@gmail.com}
       DEMO_OFFICER_PASSWORD: ${DEMO_OFFICER_PASSWORD:-department12345}
       DEMO_OFFICER_DEPARTMENT: ${DEMO_OFFICER_DEPARTMENT:-roads}
+      DEMO_WATER_OFFICER_EMAIL: ${DEMO_WATER_OFFICER_EMAIL:-testwater@gmail.com}
+      DEMO_WATER_OFFICER_PASSWORD: ${DEMO_WATER_OFFICER_PASSWORD:-department12345}
+      DEMO_POWER_OFFICER_EMAIL: ${DEMO_POWER_OFFICER_EMAIL:-testpower@gmail.com}
+      DEMO_POWER_OFFICER_PASSWORD: ${DEMO_POWER_OFFICER_PASSWORD:-department12345}
+      DEMO_SANITATION_OFFICER_EMAIL: ${DEMO_SANITATION_OFFICER_EMAIL:-testsanitation@gmail.com}
+      DEMO_SANITATION_OFFICER_PASSWORD: ${DEMO_SANITATION_OFFICER_PASSWORD:-department12345}
+      DEMO_HORTICULTURE_OFFICER_EMAIL: ${DEMO_HORTICULTURE_OFFICER_EMAIL:-testhorticulture@gmail.com}
+      DEMO_HORTICULTURE_OFFICER_PASSWORD: ${DEMO_HORTICULTURE_OFFICER_PASSWORD:-department12345}
+      DEMO_GENERAL_OFFICER_EMAIL: ${DEMO_GENERAL_OFFICER_EMAIL:-testgeneral@gmail.com}
+      DEMO_GENERAL_OFFICER_PASSWORD: ${DEMO_GENERAL_OFFICER_PASSWORD:-department12345}
       ESCALATION_INTERVAL_MS: ${ESCALATION_INTERVAL_MS:-60000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
       MEDIA_STORAGE_DRIVER: ${MEDIA_STORAGE_DRIVER:-local}
       UPLOAD_DIR: /app/data/private-uploads
       DUPLICATE_RADIUS_METERS: ${DUPLICATE_RADIUS_METERS:-1000}
@@ -50,7 +62,7 @@ services:
     volumes:
       - civic_private_uploads:/app/data/private-uploads
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
       interval: 15s
       timeout: 5s
       retries: 5

@@ -1,8 +1,11 @@
 const { randomUUID } = require("node:crypto");
 const express = require("express");
+const { parseMultipart } = require("../upload");
 const { normalizeComplaintInput } = require("../validation/complaints");
 const { requireRoles } = require("../auth");
 const { CATEGORIES } = require("../validation/complaints");
+const { createRateLimiter } = require("../rate-limit");
+const { assessPriority } = require("../priority");
 
 const DEFAULT_RADIUS_METERS = 1000;
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -27,6 +30,7 @@ async function findComplaint(db, ticketId) {
     const result = await db.query(
         `SELECT c.id, c.ticket_id, c.title, c.description, c.status,
                 c.created_at, c.updated_at, c.due_at,
+                c.priority_level, c.priority_reason, c.priority_source, c.priority_assessed_at,
                 c.latitude, c.longitude, c.map_x, c.map_y, c.user_id, c.closed_at,
                 (c.status <> 'closed' AND c.due_at < CURRENT_TIMESTAMP) AS is_overdue,
                 EXISTS (SELECT 1 FROM complaint_events escal WHERE escal.complaint_id=c.id AND escal.event_type='escalated') AS is_escalated,
@@ -58,6 +62,12 @@ async function findComplaint(db, ticketId) {
         category: { slug: row.category_slug, label: row.category_label },
         department: { id: String(row.department_id), slug: row.department_slug, name: row.department_name },
         status: row.status,
+        priority: {
+            level: row.priority_level,
+            reason: row.priority_reason,
+            source: row.priority_source,
+            assessedAt: row.priority_assessed_at
+        },
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         dueAt: row.due_at,
@@ -105,7 +115,7 @@ function withoutOwner(complaint) {
     return publicFields;
 }
 
-function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req, _res, next) => next()) {
+function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req, _res, next) => next(), storage) {
     const router = express.Router();
     router.post("/suggestions", authenticate, requireRoles("citizen"), async (req, res, next) => {
         const category = typeof req.body?.category === "string" ? req.body.category.trim().toLowerCase() : "";
@@ -165,7 +175,36 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
         } catch (error) { return next(error); }
     });
 
-    router.post("/", authenticate, requireRoles("citizen"), async (req, res, next) => {
+    router.post("/:ticketId/photo", authenticate, requireRoles("citizen"), express.raw({ type: "multipart/form-data", limit: "5.2mb" }), async (req, res, next) => {
+        let client, objectKey;
+        try {
+            if (!/^CIV-[A-F0-9]{16}$/i.test(req.params.ticketId.trim())) throw apiError(400, "INVALID_TICKET_ID", "Invalid ticket ID.");
+            const file = parseMultipart(req);
+            client = await pool.connect(); await client.query("BEGIN");
+            const found = await client.query("SELECT id,user_id,status FROM complaints WHERE ticket_id=$1 FOR UPDATE", [req.params.ticketId.trim().toUpperCase()]);
+            if (!found.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No saved complaint was found for that ticket ID.");
+            const complaint = found.rows[0];
+            if (String(complaint.user_id) !== req.user.sub) throw apiError(403, "FORBIDDEN", "Only the citizen who submitted this complaint may attach its report photo.");
+            if (complaint.status !== "assigned") throw apiError(409, "INVALID_PHOTO_STATE", "A report photo can only be attached before department work begins.");
+            objectKey = await storage.put(file.buffer, file.extension);
+            const inserted = await client.query(
+                `INSERT INTO complaint_media (complaint_id,uploader_user_id,object_key,original_name,mime_type,byte_size,media_kind)
+                 VALUES ($1,$2,$3,$4,$5,$6,'report') RETURNING id,mime_type,byte_size,created_at,media_kind`,
+                [complaint.id, req.user.sub, objectKey, file.originalName, file.mimeType, file.buffer.length]
+            );
+            await client.query(`INSERT INTO complaint_events (complaint_id,event_type,actor_type,actor_user_id,note)
+                VALUES ($1,'report_photo_uploaded','citizen',$2,'Citizen attached a live report photo.')`, [complaint.id, req.user.sub]);
+            await client.query("COMMIT");
+            const media = inserted.rows[0];
+            return res.status(201).json({ photo: { id: String(media.id), mimeType: media.mime_type, byteSize: media.byte_size, kind: media.media_kind, createdAt: media.created_at } });
+        } catch (error) {
+            if (client) { try { await client.query("ROLLBACK"); } catch {} }
+            if (objectKey) await storage.delete(objectKey);
+            if (error.type === "entity.too.large" || error.code === "UPLOAD_TOO_LARGE") return res.status(413).json({ error: { code: "UPLOAD_TOO_LARGE", message: "Report photos must be 5 MB or smaller." } });
+            return next(error);
+        } finally { if (client) client.release(); }
+    });
+    router.post("/", authenticate, requireRoles("citizen"), createRateLimiter({ limit: 10, windowMs: 60_000, code: "REPORT_RATE_LIMIT" }), async (req, res, next) => {
         const normalized = normalizeComplaintInput(req.body);
         if (normalized.error) {
             return res.status(400).json({ error: normalized.error });
@@ -173,12 +212,9 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
 
         let client;
         try {
-            client = await pool.connect();
-            await client.query("BEGIN");
-
             const { title, description, category, location } = normalized.value;
-            const categoryResult = await client.query(
-                `SELECT id, department_id, sla_hours
+            const categoryResult = await pool.query(
+                `SELECT id, department_id, sla_hours, label
                  FROM issue_categories
                  WHERE slug = $1 AND active = TRUE`,
                 [category]
@@ -188,17 +224,22 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
             }
 
             const mapping = categoryResult.rows[0];
+            const language = ["en", "hi", "pa"].includes(req.body?.language) ? req.body.language : "en";
+            const priority = await assessPriority({ title, description, category: mapping.label, language });
+            client = await pool.connect();
+            await client.query("BEGIN");
             const ticketId = `CIV-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
             const inserted = await client.query(
                 `INSERT INTO complaints
                     (ticket_id, title, description, category_id, department_id, user_id, status,
-                     latitude, longitude, map_x, map_y, due_at)
+                     latitude, longitude, map_x, map_y, due_at, priority_level, priority_reason, priority_source)
                  VALUES
                     ($1, $2, $3, $4, $5, $6, 'assigned', $7, $8, $9, $10,
-                     CURRENT_TIMESTAMP + ($11 * INTERVAL '1 hour'))
+                     CURRENT_TIMESTAMP + ($11 * INTERVAL '1 hour'), $12, $13, $14)
                  RETURNING id`,
                 [ticketId, title, description, mapping.id, mapping.department_id, req.user.sub,
-                    location.latitude, location.longitude, location.mapX, location.mapY, mapping.sla_hours]
+                    location.latitude, location.longitude, location.mapX, location.mapY, mapping.sla_hours,
+                    priority.level, priority.reason, priority.source]
             );
 
             await client.query(
@@ -206,6 +247,12 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
                     (complaint_id, event_type, actor_type, actor_user_id, previous_status, new_status, note)
                  VALUES ($1, 'submitted', 'citizen', $2, NULL, 'assigned', $3)`,
                 [inserted.rows[0].id, req.user.sub, "Complaint submitted and assigned to the responsible department."]
+            );
+
+            await client.query(
+                `INSERT INTO complaint_events (complaint_id,event_type,actor_type,note)
+                 VALUES ($1,'priority_assessed','system',$2)`,
+                [inserted.rows[0].id, `Priority recommendation (${priority.source}): ${priority.level}. ${priority.reason}`]
             );
 
             const complaint = await findComplaint(client, ticketId);
@@ -279,8 +326,8 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
             }
             if (req.user && (req.user.role === "administrator" || req.user.sub === complaint.ownerId
                 || (req.user.role === "officer" && String(req.user.departmentId) === String(complaint.department.id)))) {
-                const media = await pool.query("SELECT id,mime_type,byte_size,created_at FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
-                complaint.evidence = media.rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, createdAt: row.created_at }));
+                const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
+                complaint.evidence = media.rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at }));
                 complaint.viewerIsOwner = req.user?.role === "citizen" && req.user.sub === complaint.ownerId;
                 return res.json({ complaint: withoutOwner(complaint) });
             }

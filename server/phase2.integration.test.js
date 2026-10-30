@@ -20,7 +20,7 @@ test("Phase 2-4 authentication, privacy, geographic reports, evidence, escalatio
     const pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}` });
     let server;
     try {
-        for (const file of ["001_initial.sql", "002_auth_and_department_workflow.sql", "003_accountability.sql", "004_geographic_lookup.sql"]) {
+        for (const file of ["001_initial.sql", "002_auth_and_department_workflow.sql", "003_accountability.sql", "004_geographic_lookup.sql", "005_report_photos.sql"]) {
             await pool.query(fs.readFileSync(path.join(__dirname, "db", "migrations", file), "utf8"));
         }
         const { createApp } = require("./server");
@@ -80,6 +80,16 @@ test("Phase 2-4 authentication, privacy, geographic reports, evidence, escalatio
         } });
         assert.equal(createdRoads.response.status, 201);
         const roadTicket = createdRoads.payload.complaint.ticketId;
+        const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+        const reportPhotoForm = new FormData(); reportPhotoForm.append("file", new Blob([png], { type: "image/png" }), "report.png");
+        const reportPhoto = await call(`/api/complaints/${roadTicket}/photo`, { method: "POST", cookie: citizenCookie, body: reportPhotoForm });
+        assert.equal(reportPhoto.response.status, 201);
+        assert.equal(reportPhoto.payload.photo.kind, "report");
+        const storedReportPhoto = await pool.query("SELECT uploader_user_id,mime_type,byte_size,media_kind FROM complaint_media WHERE id=$1", [reportPhoto.payload.photo.id]);
+        const storedReportOwner = await pool.query("SELECT id FROM users WHERE email=$1", ["citizen.one@example.test"]);
+        assert.equal(String(storedReportPhoto.rows[0].uploader_user_id), String(storedReportOwner.rows[0].id));
+        assert.deepEqual({ mime_type: storedReportPhoto.rows[0].mime_type, byte_size: storedReportPhoto.rows[0].byte_size, media_kind: storedReportPhoto.rows[0].media_kind }, { mime_type: "image/png", byte_size: png.length, media_kind: "report" });
+        assert.equal((await call(`/api/complaints/${roadTicket}/photo`, { method: "POST", body: reportPhotoForm })).response.status, 401);
         const createdWater = await call("/api/complaints", { method: "POST", cookie: citizenCookie, body: {
             title: "Test water leak", description: "Water details for a different department.", category: "water"
         } });
@@ -126,10 +136,12 @@ test("Phase 2-4 authentication, privacy, geographic reports, evidence, escalatio
         assert.equal(publicTicket.response.status, 200);
         assert.equal(publicTicket.payload.complaint.description, undefined);
         assert.equal(publicTicket.payload.complaint.location, undefined);
+        assert.equal(publicTicket.payload.complaint.evidence, undefined, "report photos are not exposed publicly");
         assert.equal(publicTicket.payload.complaint.events[0].note, undefined);
         const privateTicket = await call(`/api/complaints/${roadTicket}`, { cookie: citizenCookie });
         assert.equal(privateTicket.payload.complaint.description, "Private full description for integration test.");
         assert.equal(privateTicket.payload.complaint.location.latitude, 22.57);
+        assert.equal(privateTicket.payload.complaint.evidence[0].kind, "report");
         const ownReports = await call("/api/complaints/mine", { cookie: citizenCookie });
         assert.equal(ownReports.payload.complaints.length, 3);
 
@@ -178,8 +190,14 @@ test("Phase 2-4 authentication, privacy, geographic reports, evidence, escalatio
 
         const secondSignup = await call("/api/auth/register", { method: "POST", body: { name: "Other Citizen", email: "other.citizen@example.test", password: "Civic-Phase3-Password-2" } });
         assert.equal(secondSignup.response.status, 201);
-        const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
-        const validForm = new FormData(); validForm.append("file", new Blob([png], { type: "image/png" }), "repair.png");
+        const wrongOwnerReportPhoto = await call(`/api/complaints/${roadTicket}/photo`, { method: "POST", cookie: secondSignup.session, body: reportPhotoForm });
+        assert.equal(wrongOwnerReportPhoto.response.status, 403);
+        const ownerReportPhoto = await call("/api/evidence/" + reportPhoto.payload.photo.id, { cookie: citizenCookie });
+        assert.equal(ownerReportPhoto.response.status, 200);
+        assert.equal(Buffer.from(ownerReportPhoto.payload).toString(), png.toString());
+        const otherReportPhoto = await call("/api/evidence/" + reportPhoto.payload.photo.id, { cookie: secondSignup.session });
+        assert.equal(otherReportPhoto.response.status, 403);
+const validForm = new FormData(); validForm.append("file", new Blob([png], { type: "image/png" }), "repair.png");
         const uploaded = await call(`/api/officer/complaints/${roadTicket}/evidence`, { method: "POST", cookie: officerCookie, body: validForm });
         assert.equal(uploaded.response.status, 201);
         const mediaId = uploaded.payload.evidence.id;
@@ -210,7 +228,8 @@ test("Phase 2-4 authentication, privacy, geographic reports, evidence, escalatio
         assert.equal(wrongOwnerConfirmation.response.status, 403);
         const ownerTracking = await call(`/api/complaints/${roadTicket}`, { cookie: citizenCookie });
         assert.equal(ownerTracking.payload.complaint.viewerIsOwner, true);
-        assert.equal(ownerTracking.payload.complaint.evidence.length, 1);
+        assert.equal(ownerTracking.payload.complaint.evidence.length, 2);
+        assert.deepEqual(ownerTracking.payload.complaint.evidence.map(item => item.kind).sort(), ["report", "resolution"]);
         const confirmation = await call(`/api/complaints/${roadTicket}/confirmation`, { method: "POST", cookie: citizenCookie, body: { decision: "confirm" } });
         assert.equal(confirmation.response.status, 200);
         assert.equal(confirmation.payload.complaint.status, "closed");

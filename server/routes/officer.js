@@ -2,11 +2,12 @@ const express = require("express");
 const { requireRoles } = require("../auth");
 const { findComplaint } = require("./complaints");
 const { parseMultipart } = require("../upload");
+const { PRIORITY_LEVELS } = require("../priority");
 
 const TRANSITIONS = { assigned: "in_progress", in_progress: "resolution_pending_confirmation", reopened: "in_progress" };
 function apiError(status, code, message) { return Object.assign(new Error(message), { statusCode: status, code }); }
 function mayAccessDepartment(user, departmentId) { return user.role === "administrator" || (user.role === "officer" && String(user.departmentId) === String(departmentId)); }
-function mediaList(rows) { return rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, createdAt: row.created_at })); }
+function mediaList(rows) { return rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at })); }
 
 function createOfficerRouter(pool, authenticate, storage) {
     const router = express.Router();
@@ -18,7 +19,10 @@ function createOfficerRouter(pool, authenticate, storage) {
             if (departmentId && !/^\d+$/.test(String(departmentId))) return res.status(400).json({ error: { code: "INVALID_DEPARTMENT", message: "Department ID must be numeric." } });
             const result = await pool.query(
                 `SELECT c.ticket_id FROM complaints c WHERE ($1::bigint IS NULL OR c.department_id = $1::bigint)
-                 ORDER BY (c.status IN ('closed', 'resolution_pending_confirmation')) ASC, c.due_at ASC`, [departmentId || null]
+                 ORDER BY CASE WHEN c.status IN ('assigned','in_progress','reopened') THEN 0
+                               WHEN c.status='resolution_pending_confirmation' THEN 1 ELSE 2 END ASC,
+                          CASE c.priority_level WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END ASC,
+                          (c.due_at > CURRENT_TIMESTAMP) ASC, c.due_at ASC`, [departmentId || null]
             );
             const queue = [];
             for (const row of result.rows) { const complaint = await findComplaint(pool, row.ticket_id); delete complaint.ownerId; queue.push(complaint); }
@@ -42,7 +46,7 @@ function createOfficerRouter(pool, authenticate, storage) {
             const complaint = await findComplaint(pool, ticketId);
             if (!complaint) return res.status(404).json({ error: { code: "TICKET_NOT_FOUND", message: "No saved complaint was found for that ticket ID." } });
             if (!mayAccessDepartment(req.user, complaint.department.id)) return res.status(403).json({ error: { code: "FORBIDDEN", message: "This complaint belongs to another department." } });
-            const media = await pool.query("SELECT id,mime_type,byte_size,created_at FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
+            const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
             complaint.evidence = mediaList(media.rows); delete complaint.ownerId;
             return res.json({ complaint });
         } catch (error) { return next(error); }
@@ -61,7 +65,7 @@ function createOfficerRouter(pool, authenticate, storage) {
             objectKey = await storage.put(file.buffer, file.extension);
             const inserted = await client.query(
                 `INSERT INTO complaint_media (complaint_id,uploader_user_id,object_key,original_name,mime_type,byte_size)
-                 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,mime_type,byte_size,created_at`,
+                 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,mime_type,byte_size,created_at,media_kind`,
                 [complaint.id, req.user.sub, objectKey, file.originalName, file.mimeType, file.buffer.length]
             );
             await client.query(`INSERT INTO complaint_events (complaint_id,event_type,actor_type,actor_user_id,note)
@@ -72,6 +76,46 @@ function createOfficerRouter(pool, authenticate, storage) {
             if (client) { try { await client.query("ROLLBACK"); } catch {} }
             if (objectKey) await storage.delete(objectKey);
             if (error.type === "entity.too.large") return res.status(413).json({ error: { code: "UPLOAD_TOO_LARGE", message: "Evidence images must be 5 MB or smaller." } });
+            return next(error);
+        } finally { if (client) client.release(); }
+    });
+
+    router.patch("/complaints/:ticketId/priority", ...staffOnly, async (req, res, next) => {
+        const ticketId = req.params.ticketId.trim().toUpperCase();
+        const { priorityLevel, reason } = req.body || {};
+        if (!/^CIV-[A-F0-9]{16}$/.test(ticketId)) return res.status(400).json({ error: { code: "INVALID_TICKET_ID", message: "Invalid ticket ID." } });
+        if (!PRIORITY_LEVELS.includes(priorityLevel)) return res.status(400).json({ error: { code: "INVALID_PRIORITY", message: "Choose critical, high, normal, or low priority." } });
+        if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 500) {
+            return res.status(400).json({ error: { code: "INVALID_PRIORITY_REASON", message: "Enter a reason of up to 500 characters for the priority change." } });
+        }
+        let client;
+        try {
+            client = await pool.connect();
+            await client.query("BEGIN");
+            const found = await client.query("SELECT id,status,department_id,priority_level FROM complaints WHERE ticket_id=$1 FOR UPDATE", [ticketId]);
+            if (!found.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No saved complaint was found for that ticket ID.");
+            const current = found.rows[0];
+            if (!mayAccessDepartment(req.user, current.department_id)) throw apiError(403, "FORBIDDEN", "This complaint belongs to another department.");
+            if (!["assigned", "in_progress", "reopened"].includes(current.status)) {
+                throw apiError(409, "INVALID_PRIORITY_STATE", "Priority can only be changed while department work is active.");
+            }
+            const note = `Officer changed priority from ${current.priority_level} to ${priorityLevel}. Reason: ${reason.trim()}`;
+            await client.query(
+                `UPDATE complaints SET priority_level=$1,priority_reason=$2,priority_source='officer',
+                    priority_assessed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
+                [priorityLevel, reason.trim(), current.id]
+            );
+            await client.query(
+                `INSERT INTO complaint_events (complaint_id,event_type,actor_type,actor_user_id,note)
+                 VALUES ($1,'priority_updated',$2,$3,$4)`,
+                [current.id, req.user.role, req.user.sub, note]
+            );
+            const complaint = await findComplaint(client, ticketId);
+            await client.query("COMMIT");
+            delete complaint.ownerId;
+            return res.json({ complaint });
+        } catch (error) {
+            if (client) { try { await client.query("ROLLBACK"); } catch {} }
             return next(error);
         } finally { if (client) client.release(); }
     });

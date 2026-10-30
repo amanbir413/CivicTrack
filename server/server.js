@@ -51,7 +51,7 @@ function createApp(database = pool, secret = jwtSecret, options = {}) {
     });
 
     app.use("/api/auth", createAuthRouter(database, { secret, authenticate }));
-    app.use("/api/complaints", createComplaintRouter(database, authenticate, optionalAuthenticate));
+    app.use("/api/complaints", createComplaintRouter(database, authenticate, optionalAuthenticate, storage));
     app.use("/api/officer", createOfficerRouter(database, authenticate, storage));
     app.use("/api/admin", createAdminRouter(database, authenticate));
 
@@ -81,7 +81,7 @@ function createApp(database = pool, secret = jwtSecret, options = {}) {
         res.status(404).json({ error: { code: "NOT_FOUND", message: "API endpoint not found." } });
     });
 
-    app.use((error, _req, res, _next) => {
+    app.use((error, req, res, _next) => {
         if (error.type === "entity.parse.failed") {
             return res.status(400).json({
                 error: { code: "INVALID_JSON", message: "Request body must contain valid JSON." }

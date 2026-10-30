@@ -13,7 +13,7 @@
     "db:migrate": "node server/db/migrate.js",
     "db:seed-demo-accounts": "node server/db/seed-demo-accounts.js",
     "test": "node --test",
-    "check": "node --check server/server.js && node --check server/routes/auth.js && node --check server/routes/complaints.js && node --check server/routes/officer.js && node --check server/storage/s3.js && node --check script.js"
+    "check": "node --check server/server.js && node --check server/routes/auth.js && node --check server/routes/complaints.js && node --check server/routes/officer.js && node --check server/priority.js && node --check server/storage/s3.js && node --check script.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

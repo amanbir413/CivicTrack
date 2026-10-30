@@ -1,20 +1,33 @@
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c]);
-const CATS = [["roads","🛣️","Roads","Roads Dept"],["water","💧","Water","Water Board"],["power","⚡","Power","Power Corp"],["garbage","🗑️","Garbage","Sanitation"],["drain","🌊","Drainage","Sanitation"],["parks","🌳","Parks","Horticulture"],["lights","💡","Street lights","Power Corp"],["other","📌","Other","General"]];
+const tr = value => window.civicI18n?.translate(value) || value;
+const PRIORITY_LABELS = { critical: "Critical", high: "High", normal: "Normal", low: "Low" };
+const PRIORITY_SOURCE_LABELS = { ai: "AI suggested", rules: "Rule-based fallback", officer: "Officer set" };
+const priorityLabel = level => tr(PRIORITY_LABELS[level] || "Normal");
+const prioritySourceLabel = source => tr(PRIORITY_SOURCE_LABELS[source] || "Rule-based fallback");
+function priorityEventMarkup(note) {
+    const value = String(note || "");
+    let match = value.match(/^Priority recommendation \((ai|rules|officer)\): (critical|high|normal|low)\.\s*([\s\S]*)$/);
+    if (match) return `<span>${esc(tr("Suggested priority"))}</span>: <span>${esc(priorityLabel(match[2]))}</span> · <span>${esc(prioritySourceLabel(match[1]))}</span>. ${esc(match[3])}`;
+    match = value.match(/^Officer changed priority from (critical|high|normal|low) to (critical|high|normal|low)\. Reason: ([\s\S]*)$/);
+    if (match) return `<span>${esc(tr("Priority changed"))}</span>: <span>${esc(priorityLabel(match[1]))}</span> → <span>${esc(priorityLabel(match[2]))}</span>. <span>${esc(tr("Reason"))}</span>: ${esc(match[3])}`;
+    return null;
+}
+const CATS = [["roads", "🛣️", "Roads", "Roads Dept"], ["water", "💧", "Water", "Water Board"], ["power", "⚡", "Power", "Power Corp"], ["garbage", "🗑️", "Garbage", "Sanitation"], ["drain", "🌊", "Drainage", "Sanitation"], ["parks", "🌳", "Parks", "Horticulture"], ["lights", "💡", "Street lights", "Power Corp"], ["other", "📌", "Other", "General"]];
 const CAT_IMAGES = {
-    roads:   'https://images.unsplash.com/photo-1749407758749-88fa5e77019a?auto=format&fit=crop&w=600&h=400&q=85',
-    water:   'https://images.unsplash.com/photo-1521207418485-99c705420785?auto=format&fit=crop&w=600&h=400&q=85',
-    power:   'https://images.unsplash.com/photo-1664135835898-955d1e4f9800?auto=format&fit=crop&w=600&h=400&q=85',
+    roads: 'https://images.unsplash.com/photo-1749407758749-88fa5e77019a?auto=format&fit=crop&w=600&h=400&q=85',
+    water: 'https://images.unsplash.com/photo-1521207418485-99c705420785?auto=format&fit=crop&w=600&h=400&q=85',
+    power: 'https://images.unsplash.com/photo-1664135835898-955d1e4f9800?auto=format&fit=crop&w=600&h=400&q=85',
     garbage: 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=600&h=400&q=85',
-    drain:   'https://images.unsplash.com/photo-1741997376476-04fb29e5af7d?auto=format&fit=crop&w=600&h=400&q=85',
-    parks:   'https://images.unsplash.com/photo-1643473886441-ed3c866fffea?auto=format&fit=crop&w=600&h=400&q=85',
-    lights:  'https://images.unsplash.com/photo-1505209100289-b4ba97066c6d?auto=format&fit=crop&w=600&h=400&q=85',
-    other:   'https://images.unsplash.com/photo-1764463263237-8cacd4226690?auto=format&fit=crop&w=600&h=400&q=85',
+    drain: 'https://images.unsplash.com/photo-1741997376476-04fb29e5af7d?auto=format&fit=crop&w=600&h=400&q=85',
+    parks: 'https://images.unsplash.com/photo-1643473886441-ed3c866fffea?auto=format&fit=crop&w=600&h=400&q=85',
+    lights: 'https://images.unsplash.com/photo-1505209100289-b4ba97066c6d?auto=format&fit=crop&w=600&h=400&q=85',
+    other: 'https://images.unsplash.com/photo-1764463263237-8cacd4226690?auto=format&fit=crop&w=600&h=400&q=85',
 };
 const catIcon = id => `<div class="cat-img-wrap"><img class="cat-img" src="${CAT_IMAGES[id] || ''}" alt="${id}" onerror="this.style.display='none';this.parentNode.dataset.fallback='1'"></div>`;
 const KEYS = { roads: "pothole road crack", water: "water leak pipe tap", power: "power electric wire", garbage: "garbage trash waste dump", drain: "drain sewer block", parks: "park tree bench", lights: "light lamp dark" };
 const LV = ["Junior Engineer", "Executive Engineer", "Department Head", "Commissioner"], SLA = [48, 24, 24, 12];
-let skew = 0, role = "cit", currentUser = null, view = "home", fil = "all", T = [], savedReports = [], maps = {}, selectedMarker = null, suggestionRequest = 0; const now = () => Date.now() + skew, H = 3600e3;
+let skew = 0, role = "cit", currentUser = null, view = "home", fil = "all", T = [], savedReports = [], maps = {}, selectedMarker = null, suggestionRequest = 0, cameraStream = null, nearbyCenter = null, reportPhoto = null, reportPhotoUrl = null; const now = () => Date.now() + skew, H = 3600e3;
 const API_BASE = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port === "5500"
     ? `${location.protocol}//${location.hostname}:3000` : "";
 const rawFetch = window.fetch.bind(window);
@@ -72,11 +85,21 @@ function go(v) {
     if ((v === "dash" || v === "mine") && !currentUser) { toast("Sign in to view this page"); v = "auth"; }
     if (v === "dash" && !["officer", "administrator"].includes(currentUser?.role)) { toast("This page is for department staff"); v = "home"; }
     if (v === "mine" && currentUser?.role !== "citizen") v = "home";
+    if (v !== "report") {
+        stopCameraStream();
+        if (view === "report") {
+            if (reportPhotoUrl) URL.revokeObjectURL(reportPhotoUrl);
+            reportPhoto = null; reportPhotoUrl = null;
+            $("#photoPreview").removeAttribute("src"); $("#photoPreview").hidden = true;
+            $("#cameraStart").textContent = "📍 Allow location & open camera";
+            $("#photoNotice").textContent = "A live photo and your location are required to submit this report. Photos are attached privately.";
+        }
+    }
     view = v; document.body.classList.toggle("landing-active", v === "home"); $$(".view").forEach(e => e.classList.toggle("on", e.id == "v-" + v)); nav(); if (v == "report") wiz(1); animOn(); paint(); reveal(); scrollTo(0, 0); window.civicI18n?.localize(document.getElementById("v-" + v) || document.body); requestAnimationFrame(() => { ["home", "explore"].forEach(name => { if (v === "home") maps[name]?.invalidateSize(); }); maps[v === "report" ? "pick" : v === "map" ? "main" : ""]?.invalidateSize(); });
 }
 window.go = go;
 $("#authOpen").onclick = () => go("auth");
-$("#logout").onclick = async () => { await fetch("/api/auth/logout", { method: "POST" }).catch(() => {}); currentUser = null; updateSession(); toast("Signed out"); go("home"); };
+$("#logout").onclick = async () => { await fetch("/api/auth/logout", { method: "POST" }).catch(() => { }); currentUser = null; updateSession(); toast("Signed out"); go("home"); };
 async function loadSession() { try { const response = await fetch("/api/auth/me"); if (!response.ok) throw new Error(); currentUser = (await response.json()).user; } catch { currentUser = null; } updateSession(); }
 async function submitAuth(form, endpoint) {
     const fields = Object.fromEntries(new FormData(form)); const message = form.id === "registerForm" ? $("#registerMessage") : $("#authMessage"); message.textContent = "";
@@ -99,7 +122,7 @@ $$('footer [data-view]').forEach(link => link.addEventListener("click", event =>
 window.refreshLocalizedUI = () => {
     LG = window.CIVIC_LANGUAGE || "en";
     nav();
-    renderCats();
+    if (typeof renderCats === 'function') renderCats();
     if (view === "home") {
         if (maps.home) renderSavedMap("home");
         if (maps.explore) renderSavedMap("explore");
@@ -109,6 +132,7 @@ window.refreshLocalizedUI = () => {
         wiz(R.step);
     }
     if (view === "map" && maps.main) renderSavedMap("main");
+    if (view === "dash" && dashboardLoaded) { renderDashboardKpis(); renderDashboardQueue(); }
     window.civicI18n?.localize(document.body);
 };
 $("#lang").onchange = event => window.civicI18n?.setLanguage(event.currentTarget.value);
@@ -125,6 +149,60 @@ $("#q").onkeydown = e => { if (e.key == "Enter") { R.cat = guess($("#q").value);
 let R = { step: 1, cat: "roads", latitude: null, longitude: null }; const guess = s => { s = s.toLowerCase(); for (const k in KEYS) if (KEYS[k].split(" ").some(w => s.includes(w))) return k; return "roads" };
 
 const MAP_CENTER = [22.5726, 88.3639];
+const NEARBY_RADIUS_METERS = 5000;
+let deviceLocation = null, locationRequestPromise = null;
+function requestDeviceLocation() {
+    if (deviceLocation) return Promise.resolve(deviceLocation);
+    if (locationRequestPromise) return locationRequestPromise;
+    if (!navigator.geolocation) return Promise.reject(new Error("This browser does not support location access."));
+    locationRequestPromise = new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                deviceLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+                resolve(deviceLocation);
+            },
+            error => reject(new Error(error.code === error.PERMISSION_DENIED
+                ? "Location access was denied. Allow it in your browser settings to continue."
+                : error.code === error.POSITION_UNAVAILABLE
+                    ? "Your location is unavailable right now. Try again."
+                    : "Location took too long. Try again.")),
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+    }).finally(() => { locationRequestPromise = null; });
+    return locationRequestPromise;
+}
+function showNearbyReportsAt(location) {
+    nearbyCenter = location;
+    const center = [location.latitude, location.longitude];
+    ["home", "explore", "main"].forEach(which => { maps[which + "HasFit"] = true; });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        ["home", "explore", "main"].forEach(which => {
+            const map = maps[which];
+            if (!map) return;
+            map.invalidateSize({ pan: false });
+            map.setView(center, 14, { animate: false });
+        });
+    }));
+    const button = $("#nearbyReports");
+    if (button) { button.textContent = "Show all reports"; button.setAttribute("aria-pressed", "true"); }
+    const status = $("#nearbyStatus");
+    if (status) status.textContent = "Finding public reports within 5 km…";
+    ["home", "explore", "main"].forEach(renderSavedMap);
+}
+function stopCameraStream() {
+    if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+    const video = $("#cameraPreview");
+    if (video) { video.srcObject = null; video.hidden = true; }
+    const startButton = $("#cameraStart"), captureButton = $("#capturePhoto");
+    if (startButton && captureButton) { startButton.hidden = false; captureButton.hidden = true; }
+}
+function distanceMeters(from, to) {
+    const radians = value => value * Math.PI / 180;
+    const dLat = radians(to.latitude - from.latitude), dLng = radians(to.longitude - from.longitude);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(from.latitude)) * Math.cos(radians(to.latitude)) * Math.sin(dLng / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 function mapError(id, message) { const el = $(id); if (el) el.innerHTML = '<div class="map-fallback" role="status">' + esc(message) + '</div>'; }
 function makeLeafletMap(id, zoom) {
     const element = $(id); if (!element) return null;
@@ -169,7 +247,23 @@ function mapUI() {
     $("#mapCategory").innerHTML = '<option value="all">All categories</option>' + CATS.map(c => '<option value="' + esc(c[0]) + '">' + esc(c[2]) + '</option>').join("");
     $("#mapCategory").onchange = () => renderSavedMap("main");
     $("#mapStatus").onchange = () => renderSavedMap("main");
-    $("#mapRefresh").onclick = () => renderSavedMap("main");
+    $("#mapRefresh").onclick = () => { mapDataCache.clear(); renderSavedMap("main"); };
+    $("#nearbyReports").onclick = async () => {
+        const button = $("#nearbyReports"), status = $("#nearbyStatus");
+        if (nearbyCenter) {
+            nearbyCenter = null;
+            ["home", "explore", "main"].forEach(which => { maps[which + "HasFit"] = false; });
+            button.textContent = "Show nearby reports"; button.setAttribute("aria-pressed", "false");
+            status.textContent = "Showing all public reports.";
+            return ["home", "explore", "main"].forEach(renderSavedMap);
+        }
+        button.disabled = true; status.textContent = "Requesting your location…";
+        try {
+            showNearbyReportsAt(await requestDeviceLocation());
+        } catch (error) {
+            status.textContent = error.message;
+        } finally { button.disabled = false; }
+    };
 }
 function markerColor(report) { return report.isEscalated ? "#9333ea" : report.isOverdue ? "#dc2626" : report.status === "closed" ? "#059669" : report.status === "reopened" ? "#ea580c" : report.status === "resolution_pending_confirmation" ? "#2563eb" : report.status === "in_progress" ? "#d97706" : "#475569"; }
 function publicStatusName(status) { return ({ assigned: "Assigned", in_progress: "In progress", resolution_pending_confirmation: "Awaiting citizen", reopened: "Reopened", closed: "Closed" })[status] || "Registered"; }
@@ -208,10 +302,21 @@ async function renderSavedMap(which) {
         const payload = await publicMapData(category, status);
         const groupName = which + "Markers";
         if (!maps[groupName]) maps[groupName] = window.L.layerGroup().addTo(map); else maps[groupName].clearLayers();
-        const reports = payload.reports || [];
+        const allReports = payload.reports || [];
+        const isNearby = ["home", "explore", "main"].includes(which) && Boolean(nearbyCenter);
+        const reports = isNearby ? allReports.filter(report => distanceMeters(nearbyCenter, report) <= NEARBY_RADIUS_METERS) : allReports;
+        const nearbyLayerName = which + "NearbyLayer";
+        if (isNearby) {
+            if (!maps[nearbyLayerName]) maps[nearbyLayerName] = window.L.layerGroup().addTo(map);
+            maps[nearbyLayerName].clearLayers();
+            window.L.circle([nearbyCenter.latitude, nearbyCenter.longitude], { radius: NEARBY_RADIUS_METERS, color: "#f0a36c", weight: 1.5, fillColor: "#f0a36c", fillOpacity: .08 }).addTo(maps[nearbyLayerName]);
+            window.L.circleMarker([nearbyCenter.latitude, nearbyCenter.longitude], { radius: 7, color: "#fff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }).bindTooltip("Your location").addTo(maps[nearbyLayerName]);
+        } else if (maps[nearbyLayerName]) maps[nearbyLayerName].clearLayers();
         if (statusNode) {
-            if (!reports.length && which === "main") statusNode.textContent = "No saved complaints with locations match these filters. Reports without a pin do not appear.";
+            if (!reports.length && isNearby) statusNode.textContent = "No public reports found within 5 km. Your location is shown on the map.";
+            else if (!reports.length && which === "main") statusNode.textContent = "No saved complaints with locations match these filters. Reports without a pin do not appear.";
             else if (!reports.length) statusNode.textContent = "No public reports with mapped locations are available yet.";
+            else if (isNearby) statusNode.textContent = reports.length + " nearby public reports shown within 5 km. Report locations are approximate.";
             else statusNode.textContent = (window.civicI18n?.translate("{{count}} public mapped reports shown. Citizen details and staff notes are omitted.") || "{{count}} public mapped reports shown. Citizen details and staff notes are omitted.").replace("{{count}}", String(reports.length));
         }
         const locations = new Map();
@@ -244,6 +349,7 @@ async function renderSavedMap(which) {
 }
 const ST = ["Add a photo", "Pin the location", "Confirm category", "Done!"];
 function wiz(n) {
+    if (n !== 1) stopCameraStream();
     R.step = n; $("#steps").innerHTML = [1, 2, 3].map(i => `<i class="${i <= n ? "on" : ""}"></i>`).join(""); $("#stepT").textContent = n < 4 ? `Step ${n} of 3 · ${ST[n - 1]}` : "Ticket created";[1, 2, 3, 4].forEach(i => $("#s" + i).hidden = i != n); $("#wizBtns").style.display = n == 4 ? "none" : "flex"; $("#back").style.visibility = n == 1 ? "hidden" : "visible"; $("#next").textContent = n == 3 ? "Submit" : "Next";
     if (n == 2) { drawMap("#pickMap", 1); dupCheck() } if (n == 3) { catPick(); $("#sugg").textContent = "Suggested: " + cat(R.cat)[2] + " (you can change it)" }
 }
@@ -276,15 +382,71 @@ function catPick() {
     }).join("");
     $$("#catPick .cat").forEach(e => e.onclick = () => { R.cat = e.dataset.c; catPick() });
 }
-$("#file").onchange = e => { const f = e.target.files[0]; if (f) $("#drop").innerHTML = `<img src="${URL.createObjectURL(f)}"><input type="file" accept="image/*" hidden id="file">` };
+$("#cameraStart").onclick = async () => {
+    const startButton = $("#cameraStart"), captureButton = $("#capturePhoto"), video = $("#cameraPreview"), notice = $("#photoNotice");
+    startButton.disabled = true; startButton.textContent = "Getting your location…"; notice.textContent = "Location is used to set the report pin. Your browser will ask before sharing it.";
+    try {
+        const location = await requestDeviceLocation();
+        R.latitude = location.latitude; R.longitude = location.longitude;
+        $("#manualLat").value = location.latitude.toFixed(6); $("#manualLng").value = location.longitude.toFixed(6);
+        $("#locationStatus").textContent = "Your current location is ready to use as the report pin. You can adjust it on the map.";
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Live camera capture requires a secure connection and a supported browser. You can continue and choose a map pin manually.");
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        video.srcObject = cameraStream; video.hidden = false; $("#photoPreview").hidden = true;
+        captureButton.hidden = false; startButton.hidden = true;
+        notice.textContent = "Camera ready. Take a live photo to continue. The photo will be attached privately when you submit.";
+    } catch (error) {
+        stopCameraStream(); notice.textContent = error.message; toast(error.message);
+    } finally { startButton.disabled = false; startButton.textContent = "📍 Allow location & open camera"; }
+};
+$("#capturePhoto").onclick = () => {
+    const video = $("#cameraPreview"), canvas = document.createElement("canvas");
+    if (!video.videoWidth || !video.videoHeight) return toast("The camera is still starting. Try again in a moment.");
+    const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+        if (!blob) return toast("The photo could not be captured. Try again.");
+        if (reportPhotoUrl) URL.revokeObjectURL(reportPhotoUrl);
+        reportPhoto = blob; reportPhotoUrl = URL.createObjectURL(blob);
+        $("#photoPreview").src = reportPhotoUrl; $("#photoPreview").hidden = false;
+        $("#capturePhoto").hidden = true; $("#cameraStart").hidden = false; $("#cameraStart").textContent = "📷 Retake live photo";
+        $("#photoNotice").textContent = "Live photo captured. It will be attached privately when you submit this report.";
+    }, "image/jpeg", .82);
+    stopCameraStream();
+};
 $("#desc").oninput = e => { R.cat = guess(e.target.value); if (R.step === 3) { catPick(); dupCheck(); } };
 $("#mic").onclick = () => { const S = window.SpeechRecognition || window.webkitSpeechRecognition; if (!S) return toast("Voice input not supported in this browser"); const r = new S(); r.onresult = e => { $("#desc").value = e.results[0][0].transcript; R.cat = guess($("#desc").value) }; r.start(); toast("Listeningâ€¦") };
 $("#back").onclick = () => wiz(R.step - 1);
 let savingComplaint = false;
 $("#next").onclick = async () => {
-    if (R.step == 2 && (R.latitude === null || R.longitude === null)) return toast("Select the issue location on the map or enter coordinates");
-    if (R.step < 3) return wiz(R.step + 1);
     if (savingComplaint) return;
+    if (R.step === 1) {
+        if (!reportPhoto) {
+            $("#photoNotice").textContent = "Take a live photo before continuing. Your report needs a photo and a location pin.";
+            $("#cameraStart").focus();
+            toast("Take a live photo before continuing.");
+            return;
+        }
+        const nextButton = $("#next");
+        nextButton.disabled = true;
+        try {
+            const location = await requestDeviceLocation();
+            setReportLocation(location.latitude, location.longitude, false);
+            wiz(2);
+        } catch (error) {
+            $("#locationStatus").textContent = error.message;
+            toast(error.message);
+        } finally { nextButton.disabled = false; }
+        return;
+    }
+    if (R.step == 2 && (R.latitude === null || R.longitude === null)) return toast("Allow location access to set the issue pin before continuing.");
+    if (R.step === 3 && !reportPhoto) {
+        $("#formError").textContent = "A live photo is required before you can submit this report.";
+        toast("Take a live photo before submitting.");
+        return;
+    }
+    if (R.step < 3) return wiz(R.step + 1);
 
     const submitButton = $("#next");
     const formError = $("#formError");
@@ -301,6 +463,7 @@ $("#next").onclick = async () => {
                 title: $("#title").value.trim(),
                 description: $("#desc").value.trim(),
                 category: R.cat,
+                language: window.CIVIC_LANGUAGE || "en",
                 location: { latitude: R.latitude, longitude: R.longitude }
             })
         });
@@ -309,11 +472,29 @@ $("#next").onclick = async () => {
         if (!payload.complaint?.ticketId) throw new Error("The server response did not include a ticket ID.");
 
         const complaint = payload.complaint;
+        if (complaint.priority) {
+            const priority = complaint.priority;
+            $("#tkPriority").innerHTML = `<strong><span>${esc(tr("Suggested priority"))}</span>: <span>${esc(priorityLabel(priority.level))}</span></strong> · <span>${esc(prioritySourceLabel(priority.source))}</span><br><span>${esc(priority.reason || "")}</span>`;
+        } else {
+            $("#tkPriority").textContent = "";
+        }
+        let photoMessage = "";
+        if (reportPhoto) {
+            try {
+                const photoForm = new FormData(); photoForm.append("file", reportPhoto, "report-photo.jpg");
+                const photoResponse = await fetch(`/api/complaints/${encodeURIComponent(complaint.ticketId)}/photo`, { method: "POST", body: photoForm });
+                const photoPayload = await photoResponse.json().catch(() => ({}));
+                if (!photoResponse.ok) throw new Error(photoPayload.error?.message || "Photo upload failed.");
+                photoMessage = "Live report photo attached privately.";
+            } catch (error) { photoMessage = `Report saved, but the photo could not be attached: ${error.message}`; }
+        }
         $("#tkId").textContent = complaint.ticketId;
         $("#tkDue").textContent = `Assigned to ${complaint.department.name} · Due ${new Date(complaint.dueAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} (demo SLA)`;
-        $("#tkStatus").textContent = `Status: ${complaint.status.replaceAll("_", " ")}`;
+        $("#tkStatus").textContent = `Status: ${complaint.status.replaceAll("_", " ")}` + (photoMessage ? ` · ${photoMessage}` : "");
         $("#tkGo").onclick = () => trackSavedComplaint(complaint.ticketId);
         mkQR(complaint.ticketId);
+        if (reportPhotoUrl) URL.revokeObjectURL(reportPhotoUrl);
+        reportPhoto = null; reportPhotoUrl = null; $("#photoPreview").removeAttribute("src"); $("#photoPreview").hidden = true; $("#cameraStart").hidden = false; $("#cameraStart").textContent = "📍 Allow location & open camera"; $("#capturePhoto").hidden = true; $("#photoNotice").textContent = "A live photo and your location are required to submit this report. Photos are attached privately.";
         R = { step: 1, cat: "roads", latitude: null, longitude: null };
         if (selectedMarker && maps.pick) maps.pick.removeLayer(selectedMarker);
         selectedMarker = null;
@@ -346,7 +527,10 @@ function showT(id, quiet) {
 function renderSavedComplaint(complaint) {
     cur = null;
     const status = String(complaint.status).replaceAll("_", " ");
-    const events = complaint.events.map(event => `<div><b>${esc(event.note || event.eventType.replaceAll("_", " "))}</b><br><span class="mut">${new Date(event.createdAt).toLocaleString("en-IN")}</span><br><span class="mut">${esc(event.previousStatus ? `${event.previousStatus.replaceAll("_", " ")} â†’ ` : "")}${esc(event.newStatus?.replaceAll("_", " ") || "")}</span></div>`).join("");
+    const events = complaint.events.map(event => {
+        const eventText = priorityEventMarkup(event.note) || esc(event.note || event.eventType.replaceAll("_", " "));
+        return `<div><b>${eventText}</b><br><span class="mut">${new Date(event.createdAt).toLocaleString("en-IN")}</span><br><span class="mut">${esc(event.previousStatus ? `${event.previousStatus.replaceAll("_", " ")} â†’ ` : "")}${esc(event.newStatus?.replaceAll("_", " ") || "")}</span></div>`;
+    }).join("");
     const location = complaint.location?.latitude != null
         ? "Geographic location saved"
         : !complaint.location || complaint.location.mapX === null
@@ -358,11 +542,12 @@ function renderSavedComplaint(complaint) {
 
     const description = complaint.description ? `<p>${esc(complaint.description)}</p>` : "";
     const due = complaint.dueAt ? `<p><b>Target deadline:</b> ${new Date(complaint.dueAt).toLocaleString("en-IN")} <span class="mut">(demonstration SLA)</span></p>` : "";
+    const priority = complaint.priority ? `<section class="saved-priority"><b><span>${esc(tr("Suggested priority"))}</span>: <span>${esc(priorityLabel(complaint.priority.level))}</span></b><span class="mut"> · <span>${esc(prioritySourceLabel(complaint.priority.source))}</span></span><p class="mut">${esc(complaint.priority.reason || "")}</p></section>` : "";
     const displayTitle = complaint.title || "Private complaint details";
     const state = complaint.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : complaint.isOverdue ? '<p class="od">This complaint is overdue and awaiting department action.</p>' : '';
-    const evidence = (complaint.evidence || []).map(item => `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="Resolution evidence"></a>`).join("");
+    const evidence = (complaint.evidence || []).map(item => { const label = item.kind === "report" ? "Citizen report photo" : "Resolution evidence"; return `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="${label}"></a>`; }).join("");
     const responseControls = complaint.viewerIsOwner && complaint.status === "resolution_pending_confirmation" ? `<div class="row"><button class="btn grn" onclick="respondToResolution('${esc(complaint.ticketId)}','confirm')">Confirm resolution</button><button class="btn rust" onclick="respondToResolution('${esc(complaint.ticketId)}','reject')">Reject and reopen</button></div><p class="mut">Review the department evidence before responding.</p>` : complaint.viewerIsOwner && complaint.status === "closed" ? '<p>âœ… You confirmed this resolution.</p>' : '';
-    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
+    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
 }
 async function respondToResolution(ticketId, decision) {
     const promptNote = decision === "reject" ? window.prompt("What remains unresolved? (optional)") : "";
@@ -411,57 +596,444 @@ async function mine() {
     } catch (error) { $("#mine").innerHTML = `<p class="card" role="alert">${esc(error.message)}</p>`; }
 }
 function wards() { const w = []; for (let i = 1; i <= 12; i++) { const a = T.filter(t => t.ward == i); const od = a.filter(t => t.st < 3 && left(t) < 0).length; w.push([i, a.length ? Math.round(100 - od / a.length * 100) : 100, a.length]) } w.sort((a, b) => b[1] - a[1]); $("#wards").innerHTML = w.map((x, i) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"][i] || i + 1 + "."} Ward ${x[0]}</b><span>${x[1]}% on time · ${x[2]} issues</span></div><div class="meter"><i style="width:${x[1]}%;background:${x[1] > 80 ? "var(--green)" : x[1] > 50 ? "var(--amber)" : "var(--red)"}"></i></div></div>`).join("") }
-/* DEPT */
-async function loadOfficerDashboard() {
-    $("#v-dash > .row h2").textContent = currentUser?.role === "administrator" ? "Administration and accountability" : "Department work queue";
-    $("#queue").innerHTML = '<tr><td colspan="6">Loading work queueâ€¦</td></tr>';
-    try {
-        const [queueResponse, countsResponse] = await Promise.all([fetch("/api/officer/queue"), fetch("/api/officer/counts")]);
-        const queuePayload = await queueResponse.json(); const countsPayload = await countsResponse.json();
-        if (!queueResponse.ok) throw new Error(queuePayload.error?.message || "Could not load the department queue.");
-        if (!countsResponse.ok) throw new Error(countsPayload.error?.message || "Could not load department counts.");
-        const counts = countsPayload.counts || {}; const open = Object.entries(counts).filter(([s]) => s !== "closed").reduce((n, [,v]) => n + v, 0);
-        if (currentUser?.role === "administrator") {
-            const overviewResponse = await fetch("/api/admin/overview"); const op = await overviewResponse.json(); if (!overviewResponse.ok) throw new Error(op.error?.message || "Could not load accountability metrics.");
-            const m = op.overview; $("#kpi").innerHTML = [["Total complaints",m.totalComplaints],["Open",m.openComplaints],["Overdue",m.overdueComplaints],["Escalated",m.escalatedComplaints],["Closed",m.closedComplaints],["Within SLA",m.resolvedWithinSlaPercent == null ? "â€”" : `${m.resolvedWithinSlaPercent}%`],["Avg resolution",m.averageResolutionHours == null ? "â€”" : `${m.averageResolutionHours} h`],["Citizen confirmed",m.citizenConfirmedClosures],["Reopened",m.reopenedComplaints]].map(k => `<div class="card stat"><b>${esc(k[1])}</b>${k[0]}</div>`).join("");
-        } else $("#kpi").innerHTML = [["Open", open], ["Assigned", counts.assigned || 0], ["In progress", counts.in_progress || 0], ["Awaiting confirmation", counts.resolution_pending_confirmation || 0], ["Reopened", counts.reopened || 0]].map(k => `<div class="card stat"><b>${k[1]}</b>${k[0]}</div>`).join("");
-        const queue = queuePayload.queue || [];
-        $("#queue").innerHTML = queue.length ? queue.map(c => `<tr><td>${esc(c.ticketId)}</td><td>${esc(c.category.label)} · ${esc(c.title)}</td><td>${esc(c.department.name)}</td><td>${new Date(c.dueAt).toLocaleString("en-IN")}</td><td>${esc(c.status.replaceAll("_", " "))}${c.isEscalated ? ' · <b class="od">Escalated</b>' : c.isOverdue ? ' · <b class="od">Overdue</b>' : ''}</td><td><button class="btn line" onclick="dOpen('${esc(c.ticketId)}')">Open</button></td></tr>`).join("") : '<tr><td colspan="6">No complaints in this queue.</td></tr>';
-    } catch (error) { $("#queue").innerHTML = `<tr><td colspan="6" role="alert">${esc(error.message)}</td></tr>`; }
+/* DEPARTMENT OPERATIONS DASHBOARD */
+const DUE_SOON_WINDOW_MS = 4 * 60 * 60 * 1000;
+const DASHBOARD_ACTIONABLE = new Set(["assigned", "in_progress", "reopened"]);
+let dashboardQueue = [], dashboardCounts = {}, dashboardOverview = null;
+let dashboardLoaded = false, dashboardPending = null, dashboardFilter = "all", dashboardDrawerTrigger = null;
+
+function dashStatus(status) {
+    const labels = { assigned: "Assigned", in_progress: "In progress", reopened: "Reopened", resolution_pending_confirmation: "Awaiting citizen", closed: "Closed" };
+    return labels[status] || String(status || "Unknown").replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+function dashDate(value) {
+    if (value == null || value === "") return null;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+}
+function dashDateTime(value) {
+    const date = dashDate(value);
+    return date ? date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Not available";
+}
+function dashDue(item, at = Date.now()) {
+    const date = dashDate(item?.dueAt), actionable = DASHBOARD_ACTIONABLE.has(item?.status);
+    if (!date) return { date: null, overdue: false, dueSoon: false, label: "No deadline recorded" };
+    const remaining = date.getTime() - at;
+    const overdue = actionable && (item.isOverdue === true || remaining < 0);
+    const dueSoon = actionable && !overdue && remaining >= 0 && remaining <= DUE_SOON_WINDOW_MS;
+    const minutes = Math.max(1, Math.ceil(Math.abs(remaining) / 60000));
+    const amount = minutes >= 1440 ? Math.ceil(minutes / 1440) : minutes >= 60 ? Math.ceil(minutes / 60) : minutes;
+    const unit = minutes >= 1440 ? (amount === 1 ? "day" : "days") : minutes >= 60 ? (amount === 1 ? "hour" : "hours") : (amount === 1 ? "minute" : "minutes");
+    let label;
+    if (overdue) label = "Overdue by " + amount + " " + unit;
+    else if (item.status === "closed") label = "Closed";
+    else if (item.status === "resolution_pending_confirmation") label = "Awaiting citizen";
+    else if (remaining <= 60000) label = "Due now";
+    else if (dueSoon) label = "Due in " + amount + " " + unit;
+    else {
+        const today = new Date(at), start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const dueStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const days = Math.round((dueStart - start) / 86400000);
+        label = days === 1 ? "Due tomorrow" : days > 1 && days < 7 ? "Due in " + days + " days" : "Upcoming";
+    }
+    return { date, overdue, dueSoon, label };
+}
+function dashPriority(item) {
+    return ({ critical: 0, high: 1, normal: 2, low: 3 })[item?.priority?.level] ?? 2;
+}
+function dashStatusRank(item) {
+    if (DASHBOARD_ACTIONABLE.has(item?.status)) return 0;
+    return item?.status === "resolution_pending_confirmation" ? 1 : item?.status === "closed" ? 2 : 3;
+}
+function compareDashboard(a, b, at) {
+    const statusA = dashStatusRank(a), statusB = dashStatusRank(b);
+    if (statusA !== statusB) return statusA - statusB;
+    const rankA = dashPriority(a), rankB = dashPriority(b);
+    if (rankA !== rankB) return rankA - rankB;
+    const overdueA = dashDue(a, at).overdue, overdueB = dashDue(b, at).overdue;
+    if (overdueA !== overdueB) return overdueA ? -1 : 1;
+    const dueA = dashDate(a.dueAt)?.getTime() ?? Infinity, dueB = dashDate(b.dueAt)?.getTime() ?? Infinity;
+    if (dueA !== dueB) return dueA - dueB;
+    const createdA = dashDate(a.createdAt)?.getTime() ?? Infinity, createdB = dashDate(b.createdAt)?.getTime() ?? Infinity;
+    if (statusA === 2 && createdA !== createdB) return createdB - createdA;
+    return createdA - createdB || String(a.ticketId || "").localeCompare(String(b.ticketId || ""));
+}
+function dashMatches(item, filter, at) {
+    const due = dashDue(item, at);
+    if (filter === "all") return true;
+    if (filter === "open") return item.status !== "closed";
+    if (filter === "action_required") return due.overdue || item.status === "reopened";
+    if (filter === "overdue") return due.overdue;
+    if (filter === "due_soon") return due.dueSoon;
+    if (filter === "escalated") return item.isEscalated === true;
+    return item.status === filter;
+}
+function dashMetric(value) {
+    if (value == null || value === "") return "--";
+    const number = Number(value);
+    return Number.isFinite(number) ? new Intl.NumberFormat().format(number) : " ";
+}
+function renderDashboardKpis() {
+    if (!dashboardLoaded) return;
+    const admin = currentUser?.role === "administrator";
+    let items;
+    if (admin) {
+        const data = dashboardOverview || {};
+        items = [["Total complaints", data.totalComplaints, "All authorized platform records", "all"],
+        ["Open", data.openComplaints, "Not yet closed", "open"], ["Overdue", data.overdueComplaints, "Open reports past deadline", "overdue"],
+        ["Escalated", data.escalatedComplaints, "Recorded escalation events", "escalated"],
+        ["Closed", data.closedComplaints, "Closed records", "closed"]];
+    } else {
+        const count = status => Number.isFinite(Number(dashboardCounts[status])) ? Number(dashboardCounts[status]) : dashboardQueue.filter(item => item.status === status).length;
+        const active = dashboardQueue.filter(item => DASHBOARD_ACTIONABLE.has(item.status));
+        const reopened = new Set(active.filter(item => item.status === "reopened").map(item => String(item.ticketId)));
+        const overdue = new Set(active.filter(item => dashDue(item).overdue).map(item => String(item.ticketId)));
+        const action = new Set([...reopened, ...overdue]), overdueOnly = [...overdue].filter(id => !reopened.has(id)).length;
+        const soon = active.filter(item => dashDue(item).dueSoon).length;
+        items = [["Action required", action.size, overdueOnly + " overdue; " + reopened.size + " reopened", "action_required"],
+        ["Assigned to start", count("assigned"), "Awaiting an officer work update", "assigned"],
+        ["In progress", count("in_progress"), "Currently being worked on", "in_progress"],
+        ["Due soon", soon, "Deadline within the next 4 hours", "due_soon"],
+        ["Awaiting citizen", count("resolution_pending_confirmation"), "Submitted for citizen review", "resolution_pending_confirmation"]];
+    }
+    $("#kpi").innerHTML = items.map(item => '<button class="card dept-kpi" type="button" data-dashboard-filter="' + esc(item[3]) +
+        '" aria-pressed="' + (dashboardFilter === item[3]) + '"><span class="dept-kpi-label">' + esc(item[0]) +
+        '</span><strong>' + esc(dashMetric(item[1])) + '</strong><span class="dept-kpi-detail">' + esc(item[2]) + '</span></button>').join("");
+}
+function renderAdminAnalytics() {
+    const admin = currentUser?.role === "administrator";
+    $("#adminAnalytics").hidden = !admin;
+    if (!admin || !dashboardOverview) return;
+    const data = dashboardOverview;
+    const sla = data.resolvedWithinSlaPercent == null ? "Not available" : Number(data.resolvedWithinSlaPercent).toLocaleString(undefined, { maximumFractionDigits: 1 }) + "%";
+    const average = data.averageResolutionHours == null ? "Not available" : Number(data.averageResolutionHours).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " hours";
+    const metrics = [["Departments represented", data.departments], ["Citizen-confirmed closures", data.citizenConfirmedClosures],
+    ["Reopened cases", data.reopenedComplaints], ["Closed within SLA", sla], ["Average resolution time", average]];
+    $("#adminAnalyticsGrid").innerHTML = metrics.map(item => '<article class="dept-admin-metric"><span>' + esc(item[0]) +
+        '</span><strong>' + esc(typeof item[1] === "number" ? dashMetric(item[1]) : item[1]) + '</strong></article>').join("");
+    $("#adminSlaNote").textContent = data.slaNote || "Metrics reflect the authorized administrator overview.";
+}
+function updateDashboardHeader() {
+    const admin = currentUser?.role === "administrator";
+    $("#dashEyebrow").textContent = admin ? "PLATFORM ADMINISTRATION" : "DEPARTMENT OPERATIONS";
+    $("#dashTitle").textContent = admin ? "Accountability overview" : (currentUser?.department?.name || "Department account");
+    $("#dashIntro").textContent = admin
+        ? "Monitor complaint volume, deadlines, escalation, and resolution outcomes across authorized platform records."
+        : "Manage assigned complaints, monitor deadlines, and submit verified resolutions.";
+}
+function renderDashboardQueue() {
+    if (!dashboardLoaded) return;
+    const admin = currentUser?.role === "administrator", at = Date.now();
+    const rawSearch = $("#queueSearch").value.trim(), query = rawSearch.toLocaleLowerCase();
+    const results = dashboardQueue.filter(item => {
+        const text = [item.ticketId, item.title, item.category?.label].filter(Boolean).join(" ").toLocaleLowerCase();
+        return (!query || text.includes(query)) && dashMatches(item, dashboardFilter, at);
+    }).sort((a, b) => compareDashboard(a, b, at));
+    $("#queueHead").innerHTML = '<tr><th scope="col">Priority</th><th scope="col">Ticket and issue</th>' +
+        (admin ? '<th scope="col">Department</th>' : '') + '<th scope="col">Location</th><th scope="col">Deadline</th><th scope="col">Status</th><th scope="col">Next action</th></tr>';
+    $("#queueCount").textContent = dashboardFilter === "all" && !query
+        ? dashboardQueue.length + (dashboardQueue.length === 1 ? " complaint in this authorized queue" : " complaints in this authorized queue")
+        : "Showing " + results.length + " of " + dashboardQueue.length + " complaints" + (query ? ' matching "' + rawSearch + '"' : "");
+    const cols = admin ? 7 : 6;
+    if (!results.length) {
+        const message = dashboardQueue.length ? "No complaints match this search and filter. Clear the search or choose All complaints." : "No complaints are available in this authorized queue.";
+        $("#queue").innerHTML = '<tr class="dept-empty-row"><td colspan="' + cols + '">' + esc(message) + '</td></tr>';
+        renderDashboardKpis();
+        return;
+    }
+    $("#queue").innerHTML = results.map(item => {
+        const due = dashDue(item, at), priority = priorityLabel(item.priority?.level);
+        const prioritySource = prioritySourceLabel(item.priority?.source);
+        const status = String(item.status || "unknown"), loc = item.location || {};
+        const hasGps = loc.latitude != null && loc.longitude != null && Number.isFinite(Number(loc.latitude)) && Number.isFinite(Number(loc.longitude));
+        const location = hasGps ? Number(loc.latitude).toFixed(4) + ", " + Number(loc.longitude).toFixed(4) :
+            loc.mapX != null && loc.mapY != null ? "Schematic map location" : "Not provided";
+        const ticket = String(item.ticketId || "Ticket unavailable"), title = String(item.title || "Untitled complaint");
+        const category = String(item.category?.label || "Uncategorized");
+        const next = status === "assigned" ? "Review / start" : status === "reopened" ? "Review / resume" :
+            status === "in_progress" ? "Open complaint" : status === "closed" ? "View record" : "View details";
+        const urgency = ({ critical: "critical", high: "high", normal: "normal", low: "low" })[item.priority?.level] || "normal";
+        const reason = String(item.priority?.reason || "");
+        return '<tr class="dept-queue-row"><td data-label="Priority"><span class="dept-priority ' + urgency + '" title="' + esc(reason) + '">' + esc(priority) +
+            '</span><span class="dept-priority-source">' + esc(prioritySource) + '</span>' + (item.isEscalated === true ? '<span class="dept-escalated">Escalated</span>' : '') + '</td>' +
+            '<td data-label="Ticket and issue" class="dept-issue-cell"><span class="dept-ticket">' + esc(ticket) +
+            '</span><span class="dept-issue-title">' + esc(title) + '</span><span class="dept-issue-category">' + esc(category) + '</span></td>' +
+            (admin ? '<td data-label="Department">' + esc(item.department?.name || "Department unavailable") + '</td>' : '') +
+            '<td data-label="Location">' + esc(location) + '</td><td data-label="Deadline"><span class="dept-deadline ' +
+            (due.overdue ? "overdue" : due.dueSoon ? "soon" : "") + '">' + esc(due.label) + '</span><span class="dept-deadline-exact">' +
+            esc(due.date ? dashDateTime(due.date) : "No deadline recorded") + '</span></td><td data-label="Status"><span class="dept-status state-' +
+            esc(status.replace(/[^a-z0-9_-]/gi, "")) + '">' + esc(dashStatus(status)) +
+            '</span></td><td data-label="Next action"><button type="button" class="btn line dept-open-button" data-dashboard-open="' +
+            esc(ticket) + '">' + esc(next) + '</button></td></tr>';
+    }).join("");
+    renderDashboardKpis();
+}
+function dashboardLoadError(message) {
+    const feedback = $("#dashboardFeedback");
+    feedback.hidden = false;
+    feedback.classList.add("is-error");
+    feedback.textContent = dashboardLoaded ? "Refresh failed. Showing the last successful data. " + message : "Dashboard data could not be loaded. " + message;
+    if (!dashboardLoaded) {
+        $("#kpi").innerHTML = '<p class="dept-muted" role="status">Live metrics are unavailable until the service responds.</p>';
+        $("#queue").innerHTML = '<tr class="dept-empty-row"><td colspan="7" role="alert">' + esc(message) + '</td></tr>';
+        $("#queueCount").textContent = "Queue unavailable";
+    }
+}
+async function dashboardJson(response, fallback) {
+    let payload = {};
+    try { payload = await response.json(); } catch { }
+    if (!response.ok) throw new Error(tr(payload.error?.message || fallback));
+    return payload;
+}
+function loadOfficerDashboard() {
+    if (dashboardPending) return dashboardPending;
+    updateDashboardHeader();
+    const button = $("#queueRefresh"), label = button.textContent, feedback = $("#dashboardFeedback");
+    button.disabled = true;
+    button.textContent = dashboardLoaded ? "Refreshing..." : "Loading...";
+    feedback.hidden = true;
+    feedback.classList.remove("is-error");
+    if (!dashboardLoaded) {
+        $("#kpi").innerHTML = '<p class="dept-muted" role="status">Loading live complaint metrics...</p>';
+        $("#queue").innerHTML = '<tr class="dept-empty-row"><td colspan="7" role="status">Loading authorized complaints...</td></tr>';
+        $("#queueCount").textContent = "Loading authorized complaints...";
+    }
+    dashboardPending = (async () => {
+        try {
+            const responses = await Promise.all([fetch("/api/officer/queue"), fetch("/api/officer/counts")]);
+            const queueData = await dashboardJson(responses[0], "Could not load the authorized complaint queue.");
+            const countData = await dashboardJson(responses[1], "Could not load authorized complaint counts.");
+            if (!Array.isArray(queueData.queue)) throw new Error("The queue response did not contain a valid complaint list.");
+            if (!countData.counts || typeof countData.counts !== "object") throw new Error("The counts response was not valid.");
+            let overview = null;
+            if (currentUser?.role === "administrator") {
+                const response = await fetch("/api/admin/overview"), data = await dashboardJson(response, "Could not load platform accountability metrics.");
+                if (!data.overview || typeof data.overview !== "object") throw new Error("The administrator metrics response was not valid.");
+                overview = data.overview;
+            }
+            dashboardQueue = queueData.queue.filter(item => item && typeof item === "object");
+            dashboardCounts = countData.counts;
+            dashboardOverview = overview;
+            dashboardLoaded = true;
+            renderAdminAnalytics();
+            renderDashboardKpis();
+            renderDashboardQueue();
+            $("#lastRefreshed").textContent = "Last updated " + new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+            feedback.hidden = true;
+            feedback.classList.remove("is-error");
+            return true;
+        } catch (error) {
+            dashboardLoadError(error.message || "The dashboard refresh failed.");
+            return false;
+        } finally {
+            button.disabled = false;
+            button.textContent = label;
+        }
+    })().finally(() => { dashboardPending = null; });
+    return dashboardPending;
+}
+function dashEventLabel(event) {
+    if (event.note && String(event.note).trim()) return String(event.note);
+    if (event.previousStatus && event.newStatus) return "Status changed from " + dashStatus(event.previousStatus) + " to " + dashStatus(event.newStatus) + ".";
+    const labels = {
+        submitted: "Complaint submitted", status_changed: "Workflow status updated",
+        evidence_uploaded: "Resolution evidence uploaded", report_photo_uploaded: "Original report photo attached",
+        citizen_confirmed: "Citizen confirmed the resolution", reopened: "Citizen reopened the complaint",
+        escalated: "Escalation recorded", note_added: "Timeline note added"
+    };
+    return labels[event.eventType] || dashStatus(event.eventType || "Workflow event");
+}
+function dashboardMediaSection(title, files, emptyMessage) {
+    const content = files.map(file => {
+        const url = "/api/evidence/" + encodeURIComponent(file.id);
+        const alt = file.kind === "report" ? "Original report photograph" : "Resolution evidence photograph";
+        return '<a class="dept-evidence-item" href="' + url + '" target="_blank" rel="noopener"><img src="' + url +
+            '" alt="' + esc(alt) + '" loading="lazy"><span>' + esc(dashDateTime(file.createdAt)) + '</span></a>';
+    }).join("");
+    return '<section class="dept-detail-section"><h3>' + esc(title) + '</h3>' +
+        (content ? '<div class="dept-evidence-gallery">' + content + '</div>' : '<p class="dept-muted">' + esc(emptyMessage) + '</p>') + '</section>';
 }
 async function dOpen(ticketId) {
-    $("#dBody").innerHTML = '<p>Loading complaintâ€¦</p>'; $("#drawer").classList.add("on");
+    if (!$("#drawer").classList.contains("on")) dashboardDrawerTrigger = document.activeElement;
+    $("#dBody").innerHTML = '<p class="dept-muted" role="status">Loading complaint details...</p>';
+    $("#drawer").classList.add("on");
     try {
-        const response = await fetch(`/api/officer/complaints/${encodeURIComponent(ticketId)}`); const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error?.message || "Could not load complaint details.");
-        const c = payload.complaint; const status = c.status; const canStart = status === "assigned" || status === "reopened"; const canComplete = status === "in_progress";
-        const events = (c.events || []).map(event => `<div><b>${esc(event.note || event.eventType)}</b><br><span class="mut">${new Date(event.createdAt).toLocaleString("en-IN")}</span></div>`).join("");
-        const location = c.location?.latitude != null
-            ? `GPS ${esc(c.location.latitude)}, ${esc(c.location.longitude)}`
-            : c.location?.mapX != null ? `Schematic map position ${Math.round(c.location.mapX)}, ${Math.round(c.location.mapY)}` : "No location details saved";
-        const images = (c.evidence || []).map(item => `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="Uploaded resolution evidence"></a>`).join("");
-        $("#dBody").innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.ticketId)} · ${esc(c.title)}</h3><button class="btn line" onclick="dClose()">Close</button></div><p><b>${esc(c.category.label)}</b> · ${esc(c.department.name)} · ${esc(status.replaceAll("_", " "))}</p>${c.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : c.isOverdue ? '<p class="od">Overdue · escalation check pending.</p>' : ''}<p>${esc(c.description || "No additional description.")}</p><p><b>Reported location:</b> ${location}</p><p>Target deadline: ${new Date(c.dueAt).toLocaleString("en-IN")} (demonstration SLA)</p><h4>Resolution evidence</h4><div class="evidence-gallery">${images || '<p class="mut">No evidence uploaded.</p>'}</div>${canComplete ? `<label class="btn line" for="evidenceFile">Upload evidence</label><input id="evidenceFile" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="uploadEvidence('${esc(c.ticketId)}',this)"><p class="mut">JPEG, PNG or WebP; maximum 5 MB.</p>` : ''}<div class="tl" style="margin-top:16px">${events}</div>${canStart ? `<button class="btn rust" onclick="act('${esc(c.ticketId)}','in_progress')">${status === 'reopened' ? 'Resume work' : 'Start work'}</button>` : ""}${canComplete ? `<button class="btn grn" onclick="act('${esc(c.ticketId)}','resolution_pending_confirmation')">Submit for citizen confirmation</button>` : ""}`;
-    } catch (error) { $("#dBody").innerHTML = `<p role="alert">${esc(error.message)}</p><button class="btn line" onclick="dClose()">Close</button>`; }
+        const response = await fetch("/api/officer/complaints/" + encodeURIComponent(ticketId));
+        const payload = await dashboardJson(response, "Could not load complaint details."), item = payload.complaint;
+        if (!item || typeof item !== "object") throw new Error("Complaint details were not available.");
+        const status = String(item.status || "unknown"), canStart = status === "assigned" || status === "reopened";
+        const canComplete = status === "in_progress", evidence = Array.isArray(item.evidence) ? item.evidence : [];
+        const currentPriority = PRIORITY_LABELS[item.priority?.level] ? item.priority.level : "normal";
+        const priorityReason = String(item.priority?.reason || "");
+        const resolution = evidence.filter(file => file.kind === "resolution"), photos = evidence.filter(file => file.kind === "report");
+        const due = dashDue(item), loc = item.location || {};
+        const hasGps = loc.latitude != null && loc.longitude != null && Number.isFinite(Number(loc.latitude)) && Number.isFinite(Number(loc.longitude));
+        let location = '<p class="dept-muted">No reported location is available.</p>';
+        if (hasGps) {
+            const lat = Number(loc.latitude), lng = Number(loc.longitude);
+            const href = "https://www.openstreetmap.org/?mlat=" + encodeURIComponent(lat) + "&mlon=" + encodeURIComponent(lng) + "#map=17/" + encodeURIComponent(lat) + "/" + encodeURIComponent(lng);
+            location = '<p>' + esc(lat.toFixed(6) + ", " + lng.toFixed(6)) + '</p><a href="' + href + '" target="_blank" rel="noopener">Open reported location in OpenStreetMap</a>';
+        } else if (loc.mapX != null && loc.mapY != null) {
+            location = '<p>Schematic map position: ' + esc(Math.round(loc.mapX)) + ", " + esc(Math.round(loc.mapY)) + '</p>';
+        }
+        const events = Array.isArray(item.events) ? item.events.slice().sort((a, b) =>
+            (dashDate(a.createdAt)?.getTime() ?? Infinity) - (dashDate(b.createdAt)?.getTime() ?? Infinity)) : [];
+        const timeline = events.length ? '<ol class="dept-timeline">' + events.map(event =>
+            '<li><span class="dept-timeline-title">' + (priorityEventMarkup(event.note) || esc(dashEventLabel(event))) + '</span><time datetime="' + esc(event.createdAt || "") +
+            '">' + esc(dashDateTime(event.createdAt)) + '</time></li>').join("") + '</ol>' :
+            '<p class="dept-muted">No workflow events are recorded for this complaint.</p>';
+        const escalation = item.isEscalated === true
+            ? '<p class="dept-escalation-note">An escalation event is recorded in this complaint history.</p>'
+            : '<p class="dept-muted">No escalation is recorded.</p>';
+        let action = '<p class="dept-muted">No officer action is available for this workflow state.</p>';
+        if (canStart) action = '<button type="button" class="btn rust dept-primary-action" data-dashboard-status="in_progress" data-ticket="' +
+            esc(item.ticketId) + '">' + (status === "reopened" ? "Resume work" : "Start work") + '</button>';
+        else if (canComplete) action = '<div class="dept-action-stack">' +
+            (resolution.length
+                ? '<button type="button" class="btn rust dept-primary-action" data-dashboard-status="resolution_pending_confirmation" data-ticket="' +
+                esc(item.ticketId) + '">Submit for citizen confirmation</button>'
+                : '<button type="button" class="btn rust dept-primary-action" disabled aria-describedby="evidenceRequired">Upload evidence before requesting confirmation</button><p class="dept-muted" id="evidenceRequired">At least one successfully uploaded resolution photograph is required.</p>') +
+            '<div class="dept-upload-control"><label class="btn line" for="evidenceFile">Upload resolution evidence</label>' +
+            '<input id="evidenceFile" data-ticket="' + esc(item.ticketId) + '" type="file" accept="image/jpeg,image/png,image/webp" hidden>' +
+            '<p class="dept-muted">JPEG, PNG or WebP, up to 5 MB. Uploads are private to authorized viewers.</p>' +
+            '<p id="evidenceStatus" class="dept-upload-feedback" role="status" aria-live="polite"></p></div></div>';
+        else if (status === "resolution_pending_confirmation") action = '<p class="dept-muted">This resolution is awaiting citizen confirmation.</p>';
+        else if (status === "closed") action = '<p class="dept-muted">This complaint is closed following the citizen workflow.</p>';
+        const priorityOptions = Object.keys(PRIORITY_LABELS).map(level => '<option value="' + level + '"' + (level === currentPriority ? ' selected' : '') + '>' + esc(priorityLabel(level)) + '</option>').join("");
+        const prioritySection = '<section class="dept-detail-section"><h3>' + esc(tr("Priority recommendation")) + '</h3>' +
+            '<p><span class="dept-priority ' + currentPriority + '">' + esc(priorityLabel(currentPriority)) + '</span> <span class="dept-priority-source">' +
+            esc(prioritySourceLabel(item.priority?.source)) + '</span></p><p class="dept-muted priority-reason">' + esc(priorityReason) + '</p>' +
+            '<p class="dept-muted">' + esc(tr("Priority is a recommendation. Department staff can adjust it and record a reason.")) + '</p>' +
+            (DASHBOARD_ACTIONABLE.has(status) ? '<div class="priority-edit"><label for="priorityLevel">' + esc(tr("Change priority")) + '</label><select id="priorityLevel" name="priorityLevel">' + priorityOptions +
+                '</select><label for="priorityReasonInput">' + esc(tr("Reason for change")) + '</label><textarea id="priorityReasonInput" name="reason" rows="3" maxlength="500" required placeholder="Explain why this priority should change"></textarea>' +
+                '<button type="button" class="btn line" data-dashboard-priority="' + esc(item.ticketId) + '">' + esc(tr("Update priority")) + '</button></div>' : '') + '</section>';
+        $("#dBody").innerHTML = '<div class="dept-drawer-header"><div><p class="dept-eyebrow">COMPLAINT RECORD</p><h2>' +
+            esc(item.ticketId || "Ticket") + '</h2><p class="dept-drawer-title">' + esc(item.title || "Untitled complaint") +
+            '</p></div><button type="button" class="btn line dept-drawer-close" data-dashboard-close aria-label="Close complaint details">Close</button></div>' +
+            '<div class="dept-drawer-badges"><span class="dept-status state-' + esc(status.replace(/[^a-z0-9_-]/gi, "")) + '">' +
+            esc(dashStatus(status)) + '</span><span class="dept-priority ' + currentPriority +
+            '">' + esc(priorityLabel(currentPriority)) + '</span>' + (item.isEscalated === true ? '<span class="dept-escalated">Escalation recorded</span>' : '') +
+            '<span class="dept-category">' + esc(item.category?.label || "Uncategorized") + '</span></div>' +
+            '<section class="dept-detail-section"><h3>Issue details</h3><p class="dept-description">' + esc(item.description || "No description was provided.") +
+            '</p><div class="dept-details-grid"><div><span>Department</span><strong>' + esc(item.department?.name || "Not available") +
+            '</strong></div><div><span>Reported</span><strong>' + esc(dashDateTime(item.createdAt)) + '</strong></div>' +
+            '<div><span>Deadline</span><strong>' + esc(due.date ? dashDateTime(due.date) : "No deadline recorded") +
+            '</strong></div><div><span>Location</span><div>' + location + '</div></div></div></section>' +
+            prioritySection + dashboardMediaSection("Original report photo", photos, "No original report photograph was attached.") +
+            dashboardMediaSection("Resolution evidence", resolution, "No resolution evidence has been uploaded.") +
+            '<section class="dept-detail-section"><h3>Deadline and accountability</h3><p class="' +
+            (due.overdue ? "dept-deadline overdue" : "dept-deadline") + '">' + esc(due.label) + '</p>' + escalation +
+            '</section><section class="dept-detail-section"><h3>Complaint timeline</h3>' + timeline +
+            '</section><section class="dept-detail-section dept-next-action"><h3>Next action</h3>' + action + '</section>';
+        requestAnimationFrame(() => $("#dBody [data-dashboard-close]")?.focus());
+        return true;
+    } catch (error) {
+        $("#dBody").innerHTML = '<div class="dept-drawer-header"><h2>Complaint details</h2><button type="button" class="btn line" data-dashboard-close>Close</button></div><p role="alert" class="dept-dashboard-feedback is-error">' + esc(error.message) + '</p>';
+        return false;
+    }
 }
 async function uploadEvidence(ticketId, input) {
-    const file = input.files?.[0]; if (!file) return;
-    const button = input.previousElementSibling; if (button) button.textContent = "Uploadingâ€¦";
+    const file = input.files?.[0];
+    if (!file) return;
+    const status = $("#evidenceStatus"), label = $("#dBody label[for='evidenceFile']");
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
+        if (status) status.textContent = "Choose a JPEG, PNG, or WebP image.";
+        input.value = "";
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        if (status) status.textContent = "This image exceeds the 5 MB limit.";
+        input.value = "";
+        return;
+    }
+    input.disabled = true;
+    if (label) label.textContent = "Uploading...";
+    if (status) status.textContent = "Uploading evidence securely...";
     try {
-        const form = new FormData(); form.append("file", file);
-        const response = await fetch(`/api/officer/complaints/${encodeURIComponent(ticketId)}/evidence`, { method: "POST", body: form });
-        const payload = await response.json(); if (!response.ok) throw new Error(payload.error?.message || "Evidence upload failed.");
-        toast("Evidence uploaded privately"); await dOpen(ticketId);
-    } catch (error) { toast(error.message); if (button) button.textContent = "Upload evidence"; }
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch("/api/officer/complaints/" + encodeURIComponent(ticketId) + "/evidence", { method: "POST", body: form });
+        const payload = await dashboardJson(response, "Evidence upload failed.");
+        if (!payload.evidence?.id) throw new Error("The server did not confirm the uploaded evidence.");
+        const refreshed = await dOpen(ticketId);
+        toast(refreshed ? "Resolution evidence uploaded" : "Evidence was uploaded, but refreshed case details could not be loaded.");
+        await loadOfficerDashboard();
+    } catch (error) {
+        if (status) status.textContent = error.message;
+        toast(error.message);
+        input.disabled = false;
+        if (label) label.textContent = "Upload resolution evidence";
+    }
 }
-const dClose = () => $("#drawer").classList.remove("on"); $("#drawer").onclick = e => { if (e.target.id == "drawer") dClose() };
+const dClose = () => {
+    $("#drawer").classList.remove("on");
+    const trigger = dashboardDrawerTrigger;
+    dashboardDrawerTrigger = null;
+    if (trigger?.isConnected) trigger.focus();
+};
 async function act(ticketId, status) {
     try {
-        const response = await fetch(`/api/officer/complaints/${encodeURIComponent(ticketId)}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
-        const payload = await response.json(); if (!response.ok) throw new Error(payload.error?.message || "Status update failed.");
-        toast("Complaint status updated"); await dOpen(ticketId); await loadOfficerDashboard();
+        const response = await fetch("/api/officer/complaints/" + encodeURIComponent(ticketId) + "/status", {
+            method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status })
+        });
+        const payload = await dashboardJson(response, "The complaint could not be updated.");
+        if (!payload.complaint) throw new Error("The server did not confirm the workflow update.");
+        toast("Complaint status updated");
+        await loadOfficerDashboard();
+        await dOpen(ticketId);
     } catch (error) { toast(error.message); }
 }
+async function changePriority(ticketId, button) {
+    const select = $("#priorityLevel"), reasonField = $("#priorityReasonInput");
+    if (!select || !reasonField || !reasonField.reportValidity()) return;
+    const priorityLevel = select.value, reason = reasonField.value.trim();
+    if (!reason) { reasonField.focus(); return; }
+    button.disabled = true;
+    try {
+        const response = await fetch("/api/officer/complaints/" + encodeURIComponent(ticketId) + "/priority", {
+            method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priorityLevel, reason })
+        });
+        const payload = await dashboardJson(response, "Priority could not be updated.");
+        if (!payload.complaint) throw new Error(tr("The server did not confirm the priority update."));
+        toast(tr("Priority updated"));
+        await loadOfficerDashboard();
+        await dOpen(ticketId);
+    } catch (error) {
+        toast(tr(error.message));
+        button.disabled = false;
+    }
+}
 $("#queueRefresh").onclick = () => loadOfficerDashboard();
+$("#queueSearch").addEventListener("input", renderDashboardQueue);
+$("#queueFilter").addEventListener("change", event => {
+    dashboardFilter = event.currentTarget.value;
+    renderDashboardKpis();
+    renderDashboardQueue();
+});
+$("#kpi").addEventListener("click", event => {
+    const card = event.target.closest("[data-dashboard-filter]");
+    if (!card) return;
+    dashboardFilter = card.dataset.dashboardFilter;
+    $("#queueFilter").value = dashboardFilter;
+    renderDashboardKpis();
+    renderDashboardQueue();
+});
+$("#queue").addEventListener("click", event => {
+    const button = event.target.closest("[data-dashboard-open]");
+    if (button) dOpen(button.dataset.dashboardOpen);
+});
+$("#dBody").addEventListener("click", event => {
+    if (event.target.closest("[data-dashboard-close]")) return dClose();
+    const button = event.target.closest("[data-dashboard-status]");
+    if (button) { button.disabled = true; act(button.dataset.ticket, button.dataset.dashboardStatus); }
+    const priorityButton = event.target.closest("[data-dashboard-priority]");
+    if (priorityButton) changePriority(priorityButton.dataset.dashboardPriority, priorityButton);
+});
+$("#dBody").addEventListener("change", event => {
+    if (event.target.matches("#evidenceFile")) uploadEvidence(event.target.dataset.ticket, event.target);
+});
+$("#drawer").addEventListener("click", event => { if (event.target.id === "drawer") dClose(); });
+document.addEventListener("keydown", event => { if (event.key === "Escape" && $("#drawer").classList.contains("on")) dClose(); });
 $("#landingSearchAction").onclick = () => { const issue = $("#q").value.trim(); if (!issue) { $("#q").focus(); return; } R.cat = guess(issue); $("#desc").value = issue; go("report"); };
 const categoryNavBtn = $("#landing-category-action") || $("#landing-explore-action");
 if (categoryNavBtn) {
@@ -475,7 +1047,12 @@ if (categoryNavBtn) {
         }
     };
 }
-$$('.chips span').forEach(c => c.onclick = () => { $("#q").value = c.textContent; R.cat = guess(c.textContent); $("#desc").value = c.textContent; go("report") }); seed(); document.body.classList.toggle("landing-active", view === "home"); nav(); mapUI(); drawMap("#homeMap"); animOn(); loadSession().then(() => { if (["officer", "administrator"].includes(currentUser?.role)) go("dash"); });
+$$('.chips span').forEach(c => c.onclick = () => { $("#q").value = c.textContent; R.cat = guess(c.textContent); $("#desc").value = c.textContent; go("report") }); seed(); document.body.classList.toggle("landing-active", view === "home"); nav(); mapUI(); drawMap("#homeMap"); animOn();
+requestDeviceLocation().then(showNearbyReportsAt).catch(() => {
+    const status = $("#homeMapMessage");
+    if (status) status.textContent = "Showing public reports for the default map area. Allow location to see nearby issues.";
+});
+loadSession().then(() => { if (["officer", "administrator"].includes(currentUser?.role)) go("dash"); });
 addEventListener("scroll", () => { const h = document.documentElement; $("#prog").style.width = h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight) * 100 + "%" });
 addEventListener("mousemove", e => { const c = e.target.closest && e.target.closest(".card"); if (c) { const r = c.getBoundingClientRect(); c.style.setProperty("--mx", e.clientX - r.left + "px"); c.style.setProperty("--my", e.clientY - r.top + "px") } });
 function releaseLandingIntro() { requestAnimationFrame(() => $("#v-home .landing-hero")?.classList.add("landing-ready")); }
@@ -672,25 +1249,25 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
         let W, H, particles, raf;
 
         const ORANGE = '#f0a36c';
-        const BLUE   = '#06B6D4';
-        const WHITE  = '#c8d6e0';
+        const BLUE = '#06B6D4';
+        const WHITE = '#c8d6e0';
         const PARTICLE_COUNT = 140;
 
         function resize() {
-            W = canvas.width  = hero.offsetWidth;
+            W = canvas.width = hero.offsetWidth;
             H = canvas.height = hero.offsetHeight;
         }
 
         function randomParticle() {
-            const isPulse  = Math.random() < 0.12;
+            const isPulse = Math.random() < 0.12;
             const isOrange = Math.random() < 0.18;
-            const isBlue   = !isOrange && Math.random() < 0.10;
+            const isBlue = !isOrange && Math.random() < 0.10;
             return {
-                x:     Math.random() * (W || 800),
-                y:     Math.random() * (H || 600),
-                r:     isPulse ? (1.5 + Math.random() * 2.2) : (0.4 + Math.random() * 1.2),
-                vx:    (Math.random() - 0.5) * 0.22,
-                vy:    (Math.random() - 0.5) * 0.18,
+                x: Math.random() * (W || 800),
+                y: Math.random() * (H || 600),
+                r: isPulse ? (1.5 + Math.random() * 2.2) : (0.4 + Math.random() * 1.2),
+                vx: (Math.random() - 0.5) * 0.22,
+                vy: (Math.random() - 0.5) * 0.18,
                 color: isPulse ? ORANGE : isOrange ? ORANGE : isBlue ? BLUE : WHITE,
                 alpha: 0.25 + Math.random() * 0.65,
                 twinkleSpeed: 0.008 + Math.random() * 0.018,
@@ -893,12 +1470,12 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
         const hero = document.querySelector('.landing-hero');
         if (!hero || hero.querySelector('.landing-blob')) return;
         ['landing-blob landing-blob-1',
-         'landing-blob landing-blob-2',
-         'landing-blob landing-blob-3'].forEach(cls => {
-            const div = document.createElement('div');
-            div.className = cls;
-            hero.appendChild(div);
-        });
+            'landing-blob landing-blob-2',
+            'landing-blob landing-blob-3'].forEach(cls => {
+                const div = document.createElement('div');
+                div.className = cls;
+                hero.appendChild(div);
+            });
     }
 
     /* â”€â”€ 6. Scroll-Triggered Parallax on Landing Sections â”€â”€ */
@@ -1013,7 +1590,7 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
             const r = btn.getBoundingClientRect();
             const size = Math.max(r.width, r.height) * 1.4;
             const x = e.clientX - r.left - size / 2;
-            const y = e.clientY - r.top  - size / 2;
+            const y = e.clientY - r.top - size / 2;
             const ripple = document.createElement('span');
             ripple.className = 'ripple-wave';
             ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
@@ -1118,9 +1695,9 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
                 if (raf) return;
                 raf = requestAnimationFrame(() => {
                     const r = el.getBoundingClientRect();
-                    const nx = (e.clientX - r.left) / r.width  - 0.5;
-                    const ny = (e.clientY - r.top)  / r.height - 0.5;
-                    const rx =  ny * TILT;
+                    const nx = (e.clientX - r.left) / r.width - 0.5;
+                    const ny = (e.clientY - r.top) / r.height - 0.5;
+                    const rx = ny * TILT;
                     const ry = -nx * TILT;
                     el.style.transform = `perspective(700px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(-3px) scale(1.015)`;
                     el.style.boxShadow = `0 18px 40px rgba(79,70,229,${(0.08 + Math.abs(nx) * 0.12).toFixed(3)})`;
@@ -1167,10 +1744,10 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
             burst.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
             wrap.appendChild(burst);
 
-            const COLORS = ['#10B981','#34D399','#f0a36c','#06B6D4','#a7f3d0'];
+            const COLORS = ['#10B981', '#34D399', '#f0a36c', '#06B6D4', '#a7f3d0'];
             for (let i = 0; i < 18; i++) {
                 const angle = (i / 18) * Math.PI * 2;
-                const dist  = 55 + Math.random() * 45;
+                const dist = 55 + Math.random() * 45;
                 const bx = Math.cos(angle) * dist;
                 const by = Math.sin(angle) * dist;
                 const sp = document.createElement('span');
@@ -1216,8 +1793,56 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
         });
     }
 
+    /* Civic Track: Continuous background image rotation
+   Only controls the seven .problem-bg-image elements.
+   Existing website functionality remains unchanged. */
+
+    function initCivicProblemBackgroundRotation() {
+        const section = document.querySelector(
+            '#landing-problem, .landing-problem'
+        );
+
+        if (!section || section.dataset.problemRotationStarted === 'true') {
+            return;
+        }
+
+        const images = [...section.querySelectorAll('.problem-bg-image')];
+
+        if (images.length < 2) {
+            console.warn(
+                `Civic Track: Expected at least two .problem-bg-image elements; found ${images.length}.`
+            );
+            return;
+        }
+
+        section.dataset.problemRotationStarted = 'true';
+
+        // Request all local background files immediately. Do not wait for load events:
+        // a deferred image can otherwise prevent the rotation timer from ever starting.
+        images.forEach(image => {
+            image.loading = 'eager';
+            image.decoding = 'async';
+        });
+
+        let activeIndex = images.findIndex(image =>
+            image.classList.contains('is-active')
+        );
+
+        if (activeIndex < 0) activeIndex = 0;
+
+        images.forEach((image, index) => {
+            image.classList.toggle('is-active', index === activeIndex);
+        });
+
+        window.setInterval(() => {
+            images[activeIndex].classList.remove('is-active');
+            activeIndex = (activeIndex + 1) % images.length;
+            images[activeIndex].classList.add('is-active');
+        }, 3500);
+    }
     /* â”€â”€ Boot all enhancements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     onReady(function () {
+        initCivicProblemBackgroundRotation();
         initBlobs();
         initParticleCanvas();
         initGlitch();
@@ -1234,5 +1859,96 @@ reveal(); window.civicI18n?.setLanguage(LG); setInterval(tick, 5000);
     });
 
 })();
+
+
+// /* Civic Track: Continuous background image rotation
+//    Only controls the seven .problem-bg-image elements.
+//    Existing website functionality remains unchanged. */
+
+// (function initCivicProblemBackgroundRotation() {
+//     'use strict';
+
+//     function startProblemImageRotation() {
+//         const section = document.querySelector('#landing-problem');
+
+//         // Prevent duplicate initialization.
+//         if (
+//             !section ||
+//             section.dataset.problemRotationStarted === 'true'
+//         ) {
+//             return;
+//         }
+
+//         const images = Array.from(
+//             section.querySelectorAll('.problem-bg-image')
+//         );
+
+//         // At least two images are required for rotation.
+//         if (images.length < 2) {
+//             console.warn(
+//                 'Civic Track: Background images were not found. ' +
+//                 'Check the .problem-bg-image class in your HTML.'
+//             );
+//             return;
+//         }
+
+//         section.dataset.problemRotationStarted = 'true';
+
+//         // Preload images to help prevent delays during transitions.
+//         images.forEach(image => {
+//             image.loading = 'eager';
+
+//             if (image.complete && image.naturalWidth > 0) {
+//                 return;
+//             }
+
+//             const preload = new Image();
+//             preload.src = image.currentSrc || image.src;
+//         });
+
+//         // Find the currently active image.
+//         let activeIndex = images.findIndex(image =>
+//             image.classList.contains('is-active')
+//         );
+
+//         if (activeIndex < 0) {
+//             activeIndex = 0;
+//         }
+
+//         // Ensure exactly one image is initially active.
+//         images.forEach((image, index) => {
+//             image.classList.toggle(
+//                 'is-active',
+//                 index === activeIndex
+//             );
+//         });
+
+//         // Rotate every two seconds, continuously.
+//         // After the last image, return to the first.
+//         window.setInterval(() => {
+//             const nextIndex =
+//                 (activeIndex + 1) % images.length;
+
+//             // Activate the next image.
+//             images[nextIndex].classList.add('is-active');
+
+//             // Deactivate the previous image.
+//             images[activeIndex].classList.remove('is-active');
+
+//             activeIndex = nextIndex;
+//         }, 2000);
+//     }
+
+//     // Start when the document is ready.
+//     if (document.readyState === 'loading') {
+//         document.addEventListener(
+//             'DOMContentLoaded',
+//             startProblemImageRotation,
+//             { once: true }
+//         );
+//     } else {
+//         startProblemImageRotation();
+//     }
+// })();
 
 

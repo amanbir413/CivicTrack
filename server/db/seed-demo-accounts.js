@@ -31,6 +31,13 @@ async function main() {
     const officerDepartment = process.env.DEMO_OFFICER_DEPARTMENT;
     const citizenEmail = process.env.DEMO_CITIZEN_EMAIL;
     const citizenPassword = process.env.DEMO_CITIZEN_PASSWORD;
+    const departmentOfficers = [
+        { departmentSlug: "water", name: "Demo Water Officer", email: process.env.DEMO_WATER_OFFICER_EMAIL, password: process.env.DEMO_WATER_OFFICER_PASSWORD },
+        { departmentSlug: "power", name: "Demo Power Officer", email: process.env.DEMO_POWER_OFFICER_EMAIL, password: process.env.DEMO_POWER_OFFICER_PASSWORD },
+        { departmentSlug: "sanitation", name: "Demo Sanitation Officer", email: process.env.DEMO_SANITATION_OFFICER_EMAIL, password: process.env.DEMO_SANITATION_OFFICER_PASSWORD },
+        { departmentSlug: "horticulture", name: "Demo Horticulture Officer", email: process.env.DEMO_HORTICULTURE_OFFICER_EMAIL, password: process.env.DEMO_HORTICULTURE_OFFICER_PASSWORD },
+        { departmentSlug: "general", name: "Demo General Services Officer", email: process.env.DEMO_GENERAL_OFFICER_EMAIL, password: process.env.DEMO_GENERAL_OFFICER_PASSWORD }
+    ];
     const adminEmail = process.env.DEMO_ADMIN_EMAIL;
     const adminPassword = process.env.DEMO_ADMIN_PASSWORD;
     const configured = [];
@@ -41,6 +48,12 @@ async function main() {
     if (officerEmail || officerPassword || officerDepartment) {
         if (!officerEmail || !officerPassword || !officerDepartment) throw new Error("Set DEMO_OFFICER_EMAIL, DEMO_OFFICER_PASSWORD, and DEMO_OFFICER_DEPARTMENT together.");
         configured.push({ name: "Demo Department Officer", email: officerEmail, password: officerPassword, role: "officer", departmentSlug: officerDepartment });
+    }
+    for (const officer of departmentOfficers) {
+        if (officer.email || officer.password) {
+            if (!officer.email || !officer.password) throw new Error(`Set ${officer.departmentSlug} demo officer email and password together.`);
+            configured.push({ ...officer, role: "officer" });
+        }
     }
     if (adminEmail || adminPassword) {
         if (!adminEmail || !adminPassword) throw new Error("Set DEMO_ADMIN_EMAIL and DEMO_ADMIN_PASSWORD together.");
