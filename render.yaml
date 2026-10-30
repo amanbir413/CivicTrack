@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: civictrack
+    runtime: docker
+    region: singapore
+    plan: 0.5c-512mb
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    disk:
+      name: civictrack-private-evidence
+      mountPath: /app/data/private-uploads
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: ENABLE_DEMO_ACCOUNTS
+        value: "false"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: civictrack-db
+          property: connectionString
+      - key: MEDIA_STORAGE_DRIVER
+        value: local
+      - key: UPLOAD_DIR
+        value: /app/data/private-uploads
+      - key: GEMINI_API_KEY
+        sync: false
+
+databases:
+  - name: civictrack-db
+    region: singapore
+    plan: 0.1c-256mb
+    databaseName: civic_platform
+    user: civic
+    diskSizeGB: 1

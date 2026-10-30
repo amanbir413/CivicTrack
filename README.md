@@ -264,3 +264,14 @@ The regular `docker-compose.yml` is intentionally a local demo stack. For a depl
 The production stack requires unique secrets, disables demo accounts, does not publish PostgreSQL on the host, runs the app as the non-root Docker user, and keeps its database and private evidence in separate named volumes. Put a TLS-terminating reverse proxy in front of the app before public use. Back up both volumes. This PostgreSQL Compose configuration runs one app instance; configure shared rate limiting and shared evidence storage before horizontal scaling. Use S3 storage for ephemeral hosting.
 
 Public rankings are derived from feedback left by the citizen who confirmed each case. They represent service experience and are not proof of an officer's honesty. Password recovery and email delivery require an organization mail provider and are not configured here.
+
+### Deploy CivicTrack to a phone with Render
+
+The repository includes `render.yaml` for a Render deployment in Singapore. It creates the web app, managed PostgreSQL database, and persistent private evidence disk. Render provides HTTPS, which is required by mobile browsers for camera, location, and installable PWA features. The web service and database use paid plans; Render's published July 2026 estimate for this setup is about $13/month before bandwidth and storage growth. Check [Render pricing](https://render.com/pricing) before creating resources.
+
+1. Push this project to a GitHub repository that your Render account can access.
+2. In Render, create a Blueprint from that repository and review the displayed services and monthly charges before applying it.
+3. When Render prompts for `GEMINI_API_KEY`, add a key in Render's private environment settings. Report creation and photo checks return an error until this key is configured.
+4. Wait for the database and web service to become healthy. Open the generated `onrender.com` HTTPS address on your phone, sign in, then choose **Add to Home Screen** (iPhone Safari) or **Install app** (Android Chrome).
+
+The free Render web tier has no persistent disk and is unsuitable for this deployment. Keep citizen evidence private; the production service stores it on its persistent disk. This single-instance storage setup is suitable for a small deployment, not horizontal scaling.

@@ -84,6 +84,7 @@ function createApp(database = pool, secret = jwtSecret, options = {}) {
         return res.sendFile(path.join(projectRoot, "service-worker.js"));
     });
     app.get("/icons/civictrack.svg", (_req, res) => res.sendFile(path.join(projectRoot, "icons", "civictrack.svg")));
+    app.use('/icons', express.static(path.join(projectRoot, 'icons'), { maxAge: '1d' }));
     app.use('/images', express.static(path.join(projectRoot, 'images'), { maxAge: '1d' }));
 
     app.use("/api", (_req, res) => {
