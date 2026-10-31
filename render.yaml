@@ -17,6 +17,8 @@ services:
         value: "10000"
       - key: ENABLE_DEMO_ACCOUNTS
         value: "false"
+      - key: ENABLE_DEMO_REPORTS
+        value: "false"
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL

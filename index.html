@@ -62,10 +62,11 @@
             </div>
             <p class="mut" id="shareDialogIntro">Create a short status video, or record/choose an issue clip. Nothing is
                 uploaded to CivicTrack.</p>
+            <div id="shareReportSummary" class="share-report-summary" aria-label="Public ticket summary"></div>
+            <canvas id="shareVideoCanvas" class="share-render-canvas" width="720" height="1280" aria-hidden="true"></canvas>
             <div class="escalation-share-preview">
-                <canvas id="shareVideoCanvas" width="720" height="1280" role="img"
-                    aria-label="Preview of a factual civic issue status video"></canvas>
                 <video id="shareVideoPreview" controls playsinline hidden></video>
+                <p id="shareVideoPlaceholder" class="mut">Create or choose a video to preview it here.</p>
             </div>
             <label class="share-video-picker" for="issueVideoFile">
                 <span>Record or choose your own issue video (optional)</span>
@@ -79,16 +80,19 @@
             <div class="escalation-share-actions">
                 <button class="btn rust" id="generateIssueVideo" type="button">Create status video</button>
                 <button class="btn line" id="downloadIssueVideo" type="button" hidden>Download video</button>
-                <button class="btn grn" id="shareIssueVideo" type="button" hidden>Share video to apps</button>
-                <a class="btn line" id="shareFacebook" target="_blank" rel="noopener noreferrer" hidden>Facebook · share
-                    report link</a>
-                <a class="btn line" id="shareX" target="_blank" rel="noopener noreferrer" hidden>X · share report
-                    link</a>
+                <button class="btn grn" id="shareIssueVideo" type="button" hidden>Share with your phone</button>
                 <button class="btn line" id="copyShareCaption" type="button" hidden>Copy caption</button>
             </div>
-            <p class="mut share-platform-note">Social apps decide whether they can accept a video from your phone.
-                Facebook and X links share the public report link; attach the downloaded clip in those apps if you want
-                to include it. Instagram sharing uses your phone’s share menu when supported.</p>
+            <section id="shareDestinations" class="share-destinations" hidden aria-labelledby="shareDestinationsTitle">
+                <h3 id="shareDestinationsTitle">Share video to apps</h3>
+                <div class="share-social-links">
+                    <a class="btn line" id="shareInstagram" href="https://www.instagram.com/" target="_blank"
+                        rel="noopener noreferrer">Instagram · open app</a>
+                    <a class="btn line" id="shareX" target="_blank" rel="noopener noreferrer" hidden>X · share report link</a>
+                    <a class="btn line" id="shareFacebook" target="_blank" rel="noopener noreferrer" hidden>Facebook · share report link</a>
+                </div>
+                <p class="mut share-platform-note">Download the video, then attach it in Instagram, X, or Facebook. X and Facebook links share the public ticket link; Instagram opens the app for you to post the downloaded clip.</p>
+            </section>
         </div>
     </dialog>
     <div id="splash">

@@ -30,7 +30,7 @@ async function findComplaint(db, ticketId) {
     const result = await db.query(
         `SELECT c.id, c.ticket_id, c.title, c.description, c.status,
                 c.created_at, c.updated_at, c.due_at,
-                c.priority_level, c.priority_reason, c.priority_source, c.priority_assessed_at,
+                c.priority_level, c.priority_reason, c.priority_source, c.priority_assessed_at,c.is_demo,
                 c.latitude, c.longitude, c.map_x, c.map_y, c.user_id, c.closed_at,
                 (c.status <> 'closed' AND c.due_at < CURRENT_TIMESTAMP) AS is_overdue,
                 EXISTS (SELECT 1 FROM complaint_events escal WHERE escal.complaint_id=c.id AND escal.event_type='escalated') AS is_escalated,
@@ -74,6 +74,7 @@ async function findComplaint(db, ticketId) {
         closedAt: row.closed_at,
         isOverdue: row.is_overdue,
         isEscalated: row.is_escalated,
+        isDemo: row.is_demo,
         location: {
             latitude: row.latitude === null ? null : Number(row.latitude),
             longitude: row.longitude === null ? null : Number(row.longitude),
@@ -101,6 +102,7 @@ function publicComplaint(complaint) {
         dueAt: complaint.dueAt,
         isOverdue: complaint.isOverdue,
         isEscalated: complaint.isEscalated,
+        isDemo: complaint.isDemo,
         events: complaint.events.map(event => ({
             eventType: event.eventType,
             previousStatus: event.previousStatus,
@@ -182,7 +184,7 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
         const status = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : null;
         if (status && !statuses.has(status)) return res.status(400).json({ error: { code: "INVALID_STATUS", message: "Unknown map status." } });
         try {
-            const result = await pool.query(`SELECT c.ticket_id,c.latitude,c.longitude,c.status,c.created_at,c.due_at,
+            const result = await pool.query(`SELECT c.ticket_id,c.latitude,c.longitude,c.status,c.created_at,c.due_at,c.is_demo,
                 cat.slug AS category_slug,cat.label AS category_label,
                 (c.status <> 'closed' AND c.due_at < CURRENT_TIMESTAMP) AS is_overdue,
                 EXISTS (SELECT 1 FROM complaint_events e WHERE e.complaint_id=c.id AND e.event_type='escalated') AS is_escalated
@@ -195,7 +197,7 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
                 ORDER BY c.created_at DESC LIMIT 1000`, [category, status]);
             return res.json({ reports: result.rows.map(row => ({ ticketId: row.ticket_id, latitude: Number(Number(row.latitude).toFixed(3)), longitude: Number(Number(row.longitude).toFixed(3)),
                 category: { slug: row.category_slug, label: row.category_label }, status: row.status, createdAt: row.created_at, dueAt: row.due_at,
-                isOverdue: row.is_overdue, isEscalated: row.is_escalated })) });
+                isOverdue: row.is_overdue, isEscalated: row.is_escalated, isDemo: row.is_demo })) });
         } catch (error) { return next(error); }
     });
 
@@ -394,8 +396,8 @@ function createComplaintRouter(pool, authenticate, optionalAuthenticate = (_req,
             }
             if (req.user && (req.user.role === "administrator" || req.user.sub === complaint.ownerId
                 || (req.user.role === "officer" && String(req.user.departmentId) === String(complaint.department.id)))) {
-                const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
-                complaint.evidence = media.rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at }));
+                const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind,capture_distance_m,capture_accuracy_m FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
+                complaint.evidence = media.rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at, captureDistanceMeters: row.capture_distance_m == null ? null : Number(row.capture_distance_m), captureAccuracyMeters: row.capture_accuracy_m == null ? null : Number(row.capture_accuracy_m) }));
                 complaint.viewerIsOwner = req.user?.role === "citizen" && req.user.sub === complaint.ownerId;
                 if (complaint.viewerIsOwner && complaint.status === "closed") {
                     const feedback = await pool.query(`SELECT f.rating,f.comment,f.created_at,u.name AS officer_name

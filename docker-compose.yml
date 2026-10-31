@@ -28,6 +28,7 @@ services:
       # Public, demo-only signing key. server.js refuses it in production.
       JWT_SECRET: ${JWT_SECRET:-civic-demo-only-public-signing-key-not-for-production-2026}
       ENABLE_DEMO_ACCOUNTS: ${ENABLE_DEMO_ACCOUNTS:-true}
+      ENABLE_DEMO_REPORTS: ${ENABLE_DEMO_REPORTS:-true}
       DEMO_CITIZEN_EMAIL: ${DEMO_CITIZEN_EMAIL:-testcitizen@gmail.com}
       DEMO_CITIZEN_PASSWORD: ${DEMO_CITIZEN_PASSWORD:-citizen12345}
       DEMO_OFFICER_EMAIL: ${DEMO_OFFICER_EMAIL:-testdepartment@gmail.com}

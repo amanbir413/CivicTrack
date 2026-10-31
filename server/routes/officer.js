@@ -7,7 +7,13 @@ const { PRIORITY_LEVELS } = require("../priority");
 const TRANSITIONS = { assigned: "in_progress", in_progress: "resolution_pending_confirmation", reopened: "in_progress" };
 function apiError(status, code, message) { return Object.assign(new Error(message), { statusCode: status, code }); }
 function mayAccessDepartment(user, departmentId) { return user.role === "administrator" || (user.role === "officer" && String(user.departmentId) === String(departmentId)); }
-function mediaList(rows) { return rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at })); }
+function mediaList(rows) { return rows.map(row => ({ id: String(row.id), mimeType: row.mime_type, byteSize: row.byte_size, kind: row.media_kind, createdAt: row.created_at, captureDistanceMeters: row.capture_distance_m == null ? null : Number(row.capture_distance_m), captureAccuracyMeters: row.capture_accuracy_m == null ? null : Number(row.capture_accuracy_m) })); }
+function distanceMeters(from, to) {
+    const radians = value => value * Math.PI / 180;
+    const dLat = radians(to.latitude - from.latitude), dLng = radians(to.longitude - from.longitude);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(from.latitude)) * Math.cos(radians(to.latitude)) * Math.sin(dLng / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 function createOfficerRouter(pool, authenticate, storage) {
     const router = express.Router();
@@ -87,7 +93,7 @@ function createOfficerRouter(pool, authenticate, storage) {
             const complaint = await findComplaint(pool, ticketId);
             if (!complaint) return res.status(404).json({ error: { code: "TICKET_NOT_FOUND", message: "No saved complaint was found for that ticket ID." } });
             if (!mayAccessDepartment(req.user, complaint.department.id)) return res.status(403).json({ error: { code: "FORBIDDEN", message: "This complaint belongs to another department." } });
-            const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
+            const media = await pool.query("SELECT id,mime_type,byte_size,created_at,media_kind,capture_distance_m,capture_accuracy_m FROM complaint_media WHERE complaint_id=$1 ORDER BY created_at,id", [complaint.id]);
             complaint.evidence = mediaList(media.rows); delete complaint.ownerId;
             return res.json({ complaint });
         } catch (error) { return next(error); }
@@ -98,16 +104,24 @@ function createOfficerRouter(pool, authenticate, storage) {
         try {
             const file = parseMultipart(req);
             client = await pool.connect(); await client.query("BEGIN");
-            const found = await client.query("SELECT id,status,department_id FROM complaints WHERE ticket_id=$1 FOR UPDATE", [req.params.ticketId.trim().toUpperCase()]);
+            const found = await client.query("SELECT id,status,department_id,latitude,longitude FROM complaints WHERE ticket_id=$1 FOR UPDATE", [req.params.ticketId.trim().toUpperCase()]);
             if (!found.rowCount) throw apiError(404, "TICKET_NOT_FOUND", "No saved complaint was found for that ticket ID.");
             const complaint = found.rows[0];
             if (!mayAccessDepartment(req.user, complaint.department_id)) throw apiError(403, "FORBIDDEN", "This complaint belongs to another department.");
             if (complaint.status !== "in_progress") throw apiError(409, "INVALID_EVIDENCE_STATE", "Evidence can be added while work is in progress.");
+            if (complaint.latitude == null || complaint.longitude == null) throw apiError(409, "REPORT_LOCATION_REQUIRED", "This complaint has no GPS location, so evidence cannot be location-checked.");
+            const latitude = Number(file.fields.latitude), longitude = Number(file.fields.longitude), accuracyMeters = Number(file.fields.accuracyMeters);
+            if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
+                || !Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > 100) {
+                throw apiError(422, "EVIDENCE_LOCATION_REQUIRED", "Capture the evidence live with a GPS fix accurate to 100 meters or better.");
+            }
+            const captureDistanceMeters = distanceMeters({ latitude: Number(complaint.latitude), longitude: Number(complaint.longitude) }, { latitude, longitude });
+            if (captureDistanceMeters + accuracyMeters > 100) throw apiError(422, "EVIDENCE_OUT_OF_RANGE", "Move closer to the reported issue and retry; the GPS distance plus its accuracy margin must fit within 100 meters.");
             objectKey = await storage.put(file.buffer, file.extension);
             const inserted = await client.query(
-                `INSERT INTO complaint_media (complaint_id,uploader_user_id,object_key,original_name,mime_type,byte_size)
-                 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,mime_type,byte_size,created_at,media_kind`,
-                [complaint.id, req.user.sub, objectKey, file.originalName, file.mimeType, file.buffer.length]
+                `INSERT INTO complaint_media (complaint_id,uploader_user_id,object_key,original_name,mime_type,byte_size,capture_distance_m,capture_accuracy_m)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,mime_type,byte_size,created_at,media_kind,capture_distance_m,capture_accuracy_m`,
+                [complaint.id, req.user.sub, objectKey, file.originalName, file.mimeType, file.buffer.length, Math.round(captureDistanceMeters * 10) / 10, Math.round(accuracyMeters * 10) / 10]
             );
             await client.query(`INSERT INTO complaint_events (complaint_id,event_type,actor_type,actor_user_id,note)
                 VALUES ($1,'evidence_uploaded',$2,$3,$4)`, [complaint.id, req.user.role, req.user.sub, "Resolution evidence uploaded."]);

@@ -47,7 +47,7 @@ From the repository root in PowerShell:
 docker compose up -d --build
 ```
 
-No `.env` file is required for the local demo. Compose supplies local-only database and signing-key defaults, runs migrations, and creates the two demo accounts at startup. The complete stack (app and database) is available at [http://localhost:3000](http://localhost:3000), with health status at [http://localhost:3000/api/health](http://localhost:3000/api/health). For live source edits, instead run `npm install`, `docker compose up -d db`, `npm run db:migrate`, and `npm run dev`.
+No `.env` file is required for the local demo. Compose supplies local-only database and signing-key defaults, runs migrations, creates the demo accounts, and inserts three persistent demo complaints at startup. The complete stack (app and database) is available at [http://localhost:3000](http://localhost:3000), with health status at [http://localhost:3000/api/health](http://localhost:3000/api/health). For live source edits, instead run `npm install`, `docker compose up -d db`, `npm run db:migrate`, `npm run db:seed-demo-accounts`, `npm run db:seed-demo-reports`, and `npm run dev`.
 
 Demo sign-in details (these are public demonstration credentials):
 
@@ -58,7 +58,9 @@ Demo sign-in details (these are public demonstration credentials):
 
 Anyone with the public repository can see these credentials. They are only for isolated local demo databases. Do not deploy these accounts, the default database password, or the demo JWT signing key to a public service.
 
-Compose stores PostgreSQL data in `civic_postgres_data` and local private uploads in `civic_private_uploads`. The app applies migrations, seeds the local demo accounts, and then starts. PostgreSQL health is checked before the app starts. The default database password is public and intended only for a local demo bound to `127.0.0.1`; on an existing database, changing only `POSTGRES_PASSWORD` does not rotate the password stored in PostgreSQL.
+The local setup also seeds three database-backed demonstration reports near Chandigarh University. Their ticket IDs are `CIV-000000000000D001` (new report), `CIV-000000000000D002` (escalated after its deadline), and `CIV-000000000000D003` (reopened and 17 days overdue). Track the second or third ticket to open the public follow-up panel and create the share video. These are persistent sample records for the local demo, not real municipal complaints. Re-running the seed command does not reset reports after users change their status.
+
+Compose stores PostgreSQL data in `civic_postgres_data` and local private uploads in `civic_private_uploads`. The app applies migrations, seeds the local demo accounts and reports, and then starts. PostgreSQL health is checked before the app starts. The default database password is public and intended only for a local demo bound to `127.0.0.1`; on an existing database, changing only `POSTGRES_PASSWORD` does not rotate the password stored in PostgreSQL.
 
 To stop the stack while keeping its data:
 
@@ -261,7 +263,7 @@ The regular `docker-compose.yml` is intentionally a local demo stack. For a depl
 4. Start with `docker compose --env-file .env.production -f docker-compose.production.yml up -d --build`.
 5. Check `http://localhost:<APP_PORT>/api/health`.
 
-The production stack requires unique secrets, disables demo accounts, does not publish PostgreSQL on the host, runs the app as the non-root Docker user, and keeps its database and private evidence in separate named volumes. Put a TLS-terminating reverse proxy in front of the app before public use. Back up both volumes. This PostgreSQL Compose configuration runs one app instance; configure shared rate limiting and shared evidence storage before horizontal scaling. Use S3 storage for ephemeral hosting.
+The production stack requires unique secrets, disables demo accounts and demo reports, does not publish PostgreSQL on the host, runs the app as the non-root Docker user, and keeps its database and private evidence in separate named volumes. Put a TLS-terminating reverse proxy in front of the app before public use. Back up both volumes. This PostgreSQL Compose configuration runs one app instance; configure shared rate limiting and shared evidence storage before horizontal scaling. Use S3 storage for ephemeral hosting.
 
 Public rankings are derived from feedback left by the citizen who confirmed each case. They represent service experience and are not proof of an officer's honesty. Password recovery and email delivery require an organization mail provider and are not configured here.
 
@@ -285,4 +287,4 @@ The repository includes `render.yaml` for a Render deployment in Singapore. It c
 3. When Render prompts for `GEMINI_API_KEY`, add a key in Render's private environment settings. Report creation and photo checks return an error until this key is configured.
 4. Wait for the database and web service to become healthy. Open the generated `onrender.com` HTTPS address on your phone, sign in, then choose **Add to Home Screen** (iPhone Safari) or **Install app** (Android Chrome).
 
-The free Render web tier has no persistent disk and is unsuitable for this deployment. Keep citizen evidence private; the production service stores it on its persistent disk. This single-instance storage setup is suitable for a small deployment, not horizontal scaling.
+The free Render web tier has no persistent disk and is unsuitable for this deployment. Keep citizen evidence private; the production service stores it on its persistent disk. The Render Blueprint disables the local demo accounts and demo reports. This single-instance storage setup is suitable for a small deployment, not horizontal scaling.

@@ -6242,6 +6242,26 @@ body.dept:not(.landing-active) {
     font-size: 11px
 }
 
+#drawer .dept-evidence-item small {
+    display: block;
+    margin-top: 4px;
+    color: #c5d0da;
+    font-size: 10px;
+    line-height: 1.4
+}
+
+#drawer #evidenceCameraPreview:not([hidden]),
+#drawer #evidencePhotoPreview:not([hidden]) {
+    display: block;
+    width: min(100%, 520px);
+    max-height: 360px;
+    margin: 10px 0;
+    border: 1px solid rgba(242, 237, 228, .16);
+    border-radius: 12px;
+    background: #0a1119;
+    object-fit: contain
+}
+
 #drawer .dept-timeline {
     display: grid;
     gap: 0;
@@ -6800,6 +6820,13 @@ body>.foot {
     font-size: 11px;
 }
 
+.public-demo-label {
+    color: var(--rust, #f0a36c);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+}
+
 @media(max-width:600px) {
     .public-report-card {
         grid-template-columns: 1fr;
@@ -7002,10 +7029,41 @@ body>.foot {
     letter-spacing: .12em
 }
 
+.case-document-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin: 20px 0;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: linear-gradient(120deg, rgba(255, 255, 255, .04), rgba(17, 29, 40, .8) 72%)
+}
+
+.case-document-card h3,
+.case-document-card p {
+    margin: 0
+}
+
+.case-document-card h3 {
+    margin: 4px 0 6px;
+    color: var(--txt)
+}
+
+.case-document-card .eyebrow {
+    color: var(--rust);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .12em
+}
+
 .escalation-share-dialog {
+    box-sizing: border-box;
     width: min(94vw, 620px);
-    max-width: calc(100vw - 20px);
+    max-width: calc(100vw - 24px);
     max-height: calc(100dvh - 24px);
+    overflow-x: hidden;
     overflow-y: auto;
     padding: 0;
     border: 1px solid var(--line);
@@ -7022,6 +7080,9 @@ body>.foot {
 
 .escalation-share-shell {
     display: grid;
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
     gap: 14px;
     padding: clamp(16px, 4vw, 24px)
 }
@@ -7047,24 +7108,85 @@ body>.foot {
 .escalation-share-preview {
     display: grid;
     place-items: center;
-    min-height: 150px;
-    padding: 12px;
+    min-height: 170px;
+    padding: 10px;
     border: 1px solid var(--line);
     border-radius: 14px;
     background: #09111a
 }
 
-.escalation-share-preview canvas,
+.share-report-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 14px;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--rust);
+    border-radius: 11px;
+    background: #0b1721;
+}
+
+.share-report-summary .share-ticket-kicker {
+    color: var(--mut);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+}
+
+.share-report-summary .share-ticket-id {
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.share-report-summary .share-ticket-meta {
+    grid-column: 1 / -1;
+    color: var(--mut);
+    font-size: 12px;
+}
+
+.share-render-canvas {
+    position: fixed;
+    top: 0;
+    left: -10000px;
+    width: 720px;
+    height: 1280px;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .escalation-share-preview video {
     display: block;
-    width: auto;
+    width: min(100%, 320px);
     max-width: 100%;
     height: auto;
-    max-height: min(42dvh, 460px);
+    max-height: min(56dvh, 560px);
     aspect-ratio: 9/16;
     border-radius: 10px;
     object-fit: contain;
     background: #102c27
+}
+
+/* Clamp the older inline canvas layout too, so a stale app shell cannot expand the dialog. */
+.escalation-share-preview canvas:not(.share-render-canvas) {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: min(22dvh, 190px);
+    aspect-ratio: 9/16;
+    object-fit: contain;
+}
+
+.escalation-share-dialog [hidden] {
+    display: none !important;
+}
+
+.escalation-share-preview > p {
+    text-align: center;
+    font-size: 13px;
 }
 
 .share-video-picker {
@@ -7119,6 +7241,30 @@ body>.foot {
     text-decoration: none
 }
 
+.share-destinations {
+    display: grid;
+    gap: 10px;
+    padding-top: 13px;
+    border-top: 1px solid var(--line);
+}
+
+.share-destinations h3 {
+    margin: 0;
+    color: var(--txt);
+    font-size: 17px;
+}
+
+.share-social-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+
+.share-social-links .btn {
+    min-height: 42px;
+    text-decoration: none;
+}
+
 @media(max-width:560px) {
     .escalation-share-card {
         align-items: flex-start;
@@ -7129,18 +7275,26 @@ body>.foot {
         width: 100%
     }
 
+    .case-document-card {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .case-document-card .btn {
+        width: 100%
+    }
+
     .escalation-share-dialog {
         max-height: calc(100dvh - 12px);
         border-radius: 16px
     }
 
     .escalation-share-preview {
-        min-height: 120px
+        min-height: 130px
     }
 
-    .escalation-share-preview canvas,
     .escalation-share-preview video {
-        max-height: 31dvh
+        max-height: 46dvh
     }
 
     .escalation-share-actions {
@@ -7150,5 +7304,10 @@ body>.foot {
 
     .escalation-share-actions .btn:first-child {
         grid-column: 1/-1
+    }
+
+    .share-social-links {
+        display: grid;
+        grid-template-columns: 1fr
     }
 }

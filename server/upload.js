@@ -37,26 +37,44 @@ function parseMultipart(req) {
     const boundary = Buffer.from(`--${(boundaryMatch[1] || boundaryMatch[2]).trim()}`);
     const body = req.body;
     if (!Buffer.isBuffer(body)) throw Object.assign(new Error("Upload body is required."), { statusCode: 400, code: "INVALID_UPLOAD" });
-    let cursor = body.indexOf(boundary);
+    const marker = Buffer.concat([Buffer.from("\r\n"), boundary]);
+    const fields = Object.create(null);
+    let file = null, cursor = body.indexOf(boundary);
     if (cursor < 0) throw Object.assign(new Error("Malformed multipart upload."), { statusCode: 400, code: "INVALID_UPLOAD" });
-    cursor += boundary.length + 2;
-    const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), cursor);
-    if (headerEnd < 0) throw Object.assign(new Error("Malformed multipart upload."), { statusCode: 400, code: "INVALID_UPLOAD" });
-    const headers = body.toString("latin1", cursor, headerEnd);
-    const disposition = headers.match(/content-disposition:\s*form-data;([^\r\n]+)/i)?.[1] || "";
-    if (!/name="file"/i.test(disposition)) throw Object.assign(new Error("Upload must use multipart form field 'file'."), { statusCode: 400, code: "INVALID_UPLOAD" });
-    const filename = disposition.match(/filename="([^"]*)"/i)?.[1];
-    const mimeType = headers.match(/content-type:\s*([^\r\n]+)/i)?.[1]?.trim().toLowerCase();
-    if (!filename || !mimeType) throw Object.assign(new Error("Select an image file."), { statusCode: 400, code: "INVALID_UPLOAD" });
-    const dataStart = headerEnd + 4;
-    const nextBoundary = body.indexOf(Buffer.concat([Buffer.from("\r\n"), boundary]), dataStart);
-    if (nextBoundary < 0) throw Object.assign(new Error("Malformed multipart upload."), { statusCode: 400, code: "INVALID_UPLOAD" });
-    const buffer = body.subarray(dataStart, nextBoundary);
+    cursor += boundary.length;
+    while (cursor < body.length) {
+        if (body.subarray(cursor, cursor + 2).toString() === "--") break;
+        if (body.subarray(cursor, cursor + 2).toString() === "\r\n") cursor += 2;
+        const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), cursor);
+        if (headerEnd < 0) throw Object.assign(new Error("Malformed multipart upload."), { statusCode: 400, code: "INVALID_UPLOAD" });
+        const headers = body.toString("latin1", cursor, headerEnd);
+        const disposition = headers.match(/content-disposition:\s*form-data;([^\r\n]+)/i)?.[1] || "";
+        const name = disposition.match(/name="([^\"]+)"/i)?.[1];
+        const filename = disposition.match(/filename="([^\"]*)"/i)?.[1];
+        const dataStart = headerEnd + 4;
+        const nextBoundary = body.indexOf(marker, dataStart);
+        if (nextBoundary < 0 || !name) throw Object.assign(new Error("Malformed multipart upload."), { statusCode: 400, code: "INVALID_UPLOAD" });
+        const data = body.subarray(dataStart, nextBoundary);
+        if (name === "file") {
+            if (file) throw Object.assign(new Error("Upload exactly one image."), { statusCode: 400, code: "INVALID_UPLOAD" });
+            const mimeType = headers.match(/content-type:\s*([^\r\n]+)/i)?.[1]?.trim().toLowerCase();
+            if (!filename || !mimeType) throw Object.assign(new Error("Select an image file."), { statusCode: 400, code: "INVALID_UPLOAD" });
+            file = { filename, mimeType, buffer: data };
+        } else {
+            if (!new Set(["latitude", "longitude", "accuracyMeters"]).has(name) || data.length > 64 || Object.hasOwn(fields, name)) {
+                throw Object.assign(new Error("The upload contains an invalid field."), { statusCode: 400, code: "INVALID_UPLOAD" });
+            }
+            fields[name] = data.toString("utf8").trim();
+        }
+        cursor = nextBoundary + 2 + boundary.length;
+    }
+    if (!file) throw Object.assign(new Error("Upload must include one multipart form field 'file'."), { statusCode: 400, code: "INVALID_UPLOAD" });
+    const { filename, mimeType, buffer } = file;
     if (!buffer.length) throw Object.assign(new Error("The selected file is empty."), { statusCode: 400, code: "INVALID_UPLOAD" });
     if (buffer.length > MAX_UPLOAD) throw Object.assign(new Error("Evidence images must be 5 MB or smaller."), { statusCode: 413, code: "UPLOAD_TOO_LARGE" });
     const info = TYPE_INFO[mimeType];
     if (!info || !info.check(buffer)) throw Object.assign(new Error("Upload a valid JPEG, PNG, or WebP image."), { statusCode: 415, code: "UNSUPPORTED_MEDIA_TYPE" });
-    return { buffer, mimeType, extension: info.ext, originalName: path.basename(filename).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 255) || `evidence.${info.ext}` };
+    return { buffer, mimeType, extension: info.ext, originalName: path.basename(filename).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 255) || `evidence.${info.ext}`, fields };
 }
 
 module.exports = { MAX_UPLOAD, TYPE_INFO, parseMultipart, validJpeg, validPng, validWebp };

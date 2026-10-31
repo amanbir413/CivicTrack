@@ -12,6 +12,7 @@
     "dev": "node --watch server/server.js",
     "db:migrate": "node server/db/migrate.js",
     "db:seed-demo-accounts": "node server/db/seed-demo-accounts.js",
+    "db:seed-demo-reports": "node server/db/seed-demo-reports.js",
     "test": "node --test",
     "check": "node --check server/server.js && node --check server/routes/auth.js && node --check server/routes/complaints.js && node --check server/routes/officer.js && node --check server/priority.js && node --check server/storage/s3.js && node --check script.js"
   },

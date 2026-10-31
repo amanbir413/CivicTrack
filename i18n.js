@@ -410,5 +410,39 @@ Object.assign(UI_TRANSLATIONS.pa, {
         "Social apps decide whether they can accept a video from your phone. Facebook and X links share the public report link; attach the downloaded clip in those apps if you want to include it. Instagram sharing uses your phone’s share menu when supported.": "ਤੁਹਾਡੇ ਫੋਨ ਤੋਂ ਵੀਡੀਓ ਲੈਣਾ ਸੋਸ਼ਲ ਐਪ 'ਤੇ ਨਿਰਭਰ ਕਰਦਾ ਹੈ। Facebook ਅਤੇ X ਲਿੰਕ ਜਨਤਕ ਰਿਪੋਰਟ ਸਾਂਝੀ ਕਰਦੇ ਹਨ; ਵੀਡੀਓ ਲਈ ਡਾਊਨਲੋਡ ਕੀਤੀ ਕਲਿੱਪ ਐਪ ਵਿੱਚ ਜੋੜੋ। ਸਮਰਥਿਤ ਹੋਣ 'ਤੇ Instagram ਫੋਨ ਦਾ ਸਾਂਝਾ ਮੀਨੂ ਵਰਤਦਾ ਹੈ।",
         "PUBLIC FOLLOW-UP": "ਜਨਤਕ ਫਾਲੋ-ਅੱਪ", "Still unresolved after escalation?": "ਐਸਕੇਲੇਸ਼ਨ ਤੋਂ ਬਾਅਦ ਵੀ ਅਣਸੁਲਝੀ?", "Create a factual status video with the public ticket link. It leaves out your identity, private report details, exact location, and staff names.": "ਜਨਤਕ ਟਿਕਟ ਲਿੰਕ ਨਾਲ ਤੱਥਾਂ ਵਾਲੀ ਸਥਿਤੀ ਵੀਡੀਓ ਬਣਾਓ। ਇਸ ਵਿੱਚ ਤੁਹਾਡੀ ਪਛਾਣ, ਨਿੱਜੀ ਰਿਪੋਰਟ ਵੇਰਵੇ, ਸਹੀ ਥਾਂ ਜਾਂ ਕਰਮਚਾਰੀਆਂ ਦੇ ਨਾਮ ਨਹੀਂ ਹੋਣਗੇ।", "Create share video": "ਸਾਂਝੀ ਕਰਨ ਵਾਲੀ ਵੀਡੀਓ ਬਣਾਓ"
     });
+    Object.assign(UI_TRANSLATIONS.hi, {
+        "SEEDED DEMO SCENARIO · NOT A REAL COMPLAINT": "सीड किया गया डेमो · वास्तविक शिकायत नहीं",
+        "Seeded demonstration scenario; not a real municipal complaint.": "सीड किया गया प्रदर्शन उदाहरण; वास्तविक नगर शिकायत नहीं।",
+        "SLA ESCALATION": "समय-सीमा एस्केलेशन",
+        "Escalation recorded": "एस्केलेशन दर्ज",
+        "days past the target date": "दिन लक्ष्य तारीख़ से अधिक",
+        "Create or choose a video to preview it here.": "वीडियो बनाएं या चुनें; उसका पूर्वावलोकन यहाँ दिखेगा।",
+        "Share video to apps": "ऐप्स पर वीडियो साझा करें",
+        "Instagram · open app": "Instagram · ऐप खोलें",
+        "Share with your phone": "फ़ोन से साझा करें",
+        "Download the video, then attach it in Instagram, X, or Facebook. X and Facebook links share the public ticket link; Instagram opens the app for you to post the downloaded clip.": "वीडियो डाउनलोड करके Instagram, X या Facebook में जोड़ें। X और Facebook लिंक सार्वजनिक टिकट साझा करते हैं; Instagram डाउनलोड की गई क्लिप पोस्ट करने के लिए ऐप खोलेगा।"
+    });
+    Object.assign(UI_TRANSLATIONS.pa, {
+        "SEEDED DEMO SCENARIO · NOT A REAL COMPLAINT": "ਸੀਡ ਕੀਤਾ ਡੈਮੋ · ਅਸਲ ਸ਼ਿਕਾਇਤ ਨਹੀਂ",
+        "Seeded demonstration scenario; not a real municipal complaint.": "ਸੀਡ ਕੀਤਾ ਡੈਮੋ ਉਦਾਹਰਨ; ਅਸਲ ਨਗਰਪਾਲਿਕਾ ਸ਼ਿਕਾਇਤ ਨਹੀਂ।",
+        "SLA ESCALATION": "ਮਿਆਦ ਐਸਕੇਲੇਸ਼ਨ",
+        "Escalation recorded": "ਐਸਕੇਲੇਸ਼ਨ ਦਰਜ",
+        "days past the target date": "ਟੀਚਾ ਮਿਤੀ ਤੋਂ ਦਿਨ ਬਾਅਦ",
+        "Create or choose a video to preview it here.": "ਵੀਡੀਓ ਬਣਾਓ ਜਾਂ ਚੁਣੋ; ਇਸਦਾ ਪੂਰਵਦਰਸ਼ਨ ਇੱਥੇ ਦਿਖੇਗਾ।",
+        "Share video to apps": "ਐਪਾਂ ਨਾਲ ਵੀਡੀਓ ਸਾਂਝੀ ਕਰੋ",
+        "Instagram · open app": "Instagram · ਐਪ ਖੋਲ੍ਹੋ",
+        "Share with your phone": "ਫੋਨ ਨਾਲ ਸਾਂਝਾ ਕਰੋ",
+        "Download the video, then attach it in Instagram, X, or Facebook. X and Facebook links share the public ticket link; Instagram opens the app for you to post the downloaded clip.": "ਵੀਡੀਓ ਡਾਊਨਲੋਡ ਕਰਕੇ Instagram, X ਜਾਂ Facebook ਵਿੱਚ ਜੋੜੋ। X ਅਤੇ Facebook ਲਿੰਕ ਜਨਤਕ ਟਿਕਟ ਸਾਂਝੀ ਕਰਦੇ ਹਨ; Instagram ਡਾਊਨਲੋਡ ਕੀਤੀ ਕਲਿੱਪ ਪੋਸਟ ਕਰਨ ਲਈ ਐਪ ਖੋਲ੍ਹੇਗਾ।"
+    });
+    Object.assign(UI_TRANSLATIONS.hi, {
+        "Adding the public ticket and escalation details to": "सार्वजनिक टिकट और एस्केलेशन विवरण जोड़े जा रहे हैं:",
+        "Ticket ID and escalation details are embedded in this downloaded video.": "इस डाउनलोड किए गए वीडियो में टिकट आईडी और एस्केलेशन विवरण जोड़ दिए गए हैं।",
+        "Choose a clip that is 30 seconds or shorter so ticket details can be added.": "टिकट विवरण जोड़ने के लिए 30 सेकंड या उससे छोटा वीडियो चुनें।"
+    });
+    Object.assign(UI_TRANSLATIONS.pa, {
+        "Adding the public ticket and escalation details to": "ਜਨਤਕ ਟਿਕਟ ਅਤੇ ਐਸਕੇਲੇਸ਼ਨ ਵੇਰਵੇ ਜੋੜੇ ਜਾ ਰਹੇ ਹਨ:",
+        "Ticket ID and escalation details are embedded in this downloaded video.": "ਇਸ ਡਾਊਨਲੋਡ ਕੀਤੀ ਵੀਡੀਓ ਵਿੱਚ ਟਿਕਟ ID ਅਤੇ ਐਸਕੇਲੇਸ਼ਨ ਵੇਰਵੇ ਜੋੜੇ ਗਏ ਹਨ।",
+        "Choose a clip that is 30 seconds or shorter so ticket details can be added.": "ਟਿਕਟ ਵੇਰਵੇ ਜੋੜਨ ਲਈ 30 ਸਕਿੰਟ ਜਾਂ ਇਸ ਤੋਂ ਛੋਟੀ ਵੀਡੀਓ ਚੁਣੋ।"
+    });
     window.civicI18n = { setLanguage, translate: value => translate(value, window.CIVIC_LANGUAGE || "en"), localize: root => localizeTree(root, window.CIVIC_LANGUAGE || "en") };
 })();

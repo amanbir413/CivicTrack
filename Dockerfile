@@ -1,9 +1,9 @@
 FROM node:20-alpine
-ENV NODE_ENV=production PORT=10000 ENABLE_DEMO_ACCOUNTS=false
+ENV NODE_ENV=production PORT=10000 ENABLE_DEMO_ACCOUNTS=false ENABLE_DEMO_REPORTS=false
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && mkdir -p /app/data/private-uploads && chown -R node:node /app
 COPY --chown=node:node . .
 USER node
 EXPOSE 10000
-CMD ["sh", "-c", "npm run db:migrate && if [ \"$ENABLE_DEMO_ACCOUNTS\" = \"true\" ]; then npm run db:seed-demo-accounts; fi && exec npm start"]
+CMD ["sh", "-c", "npm run db:migrate && if [ \"$ENABLE_DEMO_ACCOUNTS\" = \"true\" ]; then npm run db:seed-demo-accounts; fi && if [ \"$ENABLE_DEMO_REPORTS\" = \"true\" ]; then npm run db:seed-demo-reports; fi && exec npm start"]

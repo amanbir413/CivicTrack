@@ -348,7 +348,11 @@ function showMapReport(report, which = "main") {
     summary.append(category, document.createTextNode(" · " + (window.civicI18n?.translate(statusName) || statusName)));
     const privacy = document.createElement("p"); privacy.className = "mut"; privacy.textContent = "Approximate map location; no reporter details are public.";
     const track = document.createElement("button"); track.type = "button"; track.className = "btn rust"; track.textContent = "Open ticket timeline"; track.addEventListener("click", () => trackSavedComplaint(report.ticketId));
-    target.append(eyebrow, title, summary, privacy, track); target.hidden = false;
+    if (report.isDemo) {
+        const demo = document.createElement("p"); demo.className = "public-demo-label"; demo.textContent = tr("SEEDED DEMO SCENARIO · NOT A REAL COMPLAINT");
+        target.append(eyebrow, title, demo, summary, privacy, track);
+    } else target.append(eyebrow, title, summary, privacy, track);
+    target.hidden = false;
     window.civicI18n?.localize(target);
 }
 function refreshSavedMaps() { mapDataCache.clear(); loadPublicMetrics(); if (maps.home) renderSavedMap("home"); if (maps.main) renderSavedMap("main"); }
@@ -439,7 +443,8 @@ function renderPublicReportCards(reports, map) {
         const image = CAT_IMAGES[report.category?.slug] || CAT_IMAGES.other;
         const status = tr(publicStatusName(report.status));
         const distance = nearbyCenter ? `<span>${(distanceMeters(nearbyCenter, report) / 1000).toFixed(1)} km away</span>` : "";
-        return `<button class="public-report-card" type="button" data-report-index="${i}"><img src="${esc(image)}" alt="Illustrative ${esc(report.category?.label || "civic issue")} category image" loading="lazy"><span class="public-report-copy"><strong>${esc(report.category?.label || "Civic issue")}</strong><span>${esc(report.ticketId)} · ${esc(status)}</span><span>${new Date(report.createdAt).toLocaleString("en-IN", { dateStyle: "medium" })} ${distance}</span><small>Category illustration, not the submitted report photo</small></span></button>`;
+        const demoLabel = report.isDemo ? `<small class="public-demo-label">${esc(tr("SEEDED DEMO SCENARIO · NOT A REAL COMPLAINT"))}</small>` : "";
+        return `<button class="public-report-card" type="button" data-report-index="${i}"><img src="${esc(image)}" alt="Illustrative ${esc(report.category?.label || "civic issue")} category image" loading="lazy"><span class="public-report-copy">${demoLabel}<strong>${esc(report.category?.label || "Civic issue")}</strong><span>${esc(report.ticketId)} · ${esc(status)}</span><span>${new Date(report.createdAt).toLocaleString("en-IN", { dateStyle: "medium" })} ${distance}</span><small>Category illustration, not the submitted report photo</small></span></button>`;
     }).join("");
     list.querySelectorAll("[data-report-index]").forEach(button => button.addEventListener("click", () => {
         const report = reports[Number(button.dataset.reportIndex)];
@@ -721,6 +726,7 @@ function renderSavedComplaint(complaint) {
     const priority = complaint.priority ? `<section class="saved-priority"><b><span>${esc(tr("Suggested priority"))}</span>: <span>${esc(priorityLabel(complaint.priority.level))}</span></b><span class="mut"> · <span>${esc(prioritySourceLabel(complaint.priority.source))}</span></span><p class="mut">${esc(complaint.priority.reason || "")}</p></section>` : "";
     const displayTitle = complaint.title || "Private complaint details";
     const state = complaint.isEscalated ? '<p class="od">SLA escalation recorded. Workflow status remains unchanged.</p>' : complaint.isOverdue ? '<p class="od">This complaint is overdue and awaiting department action.</p>' : '';
+    const demoNotice = complaint.isDemo ? `<p class="public-demo-label">${esc(tr("Seeded demonstration scenario; not a real municipal complaint."))}</p>` : "";
     const evidence = (complaint.evidence || []).map(item => { const label = item.kind === "report" ? "Citizen report photo" : "Resolution evidence"; return `<a href="/api/evidence/${encodeURIComponent(item.id)}" target="_blank" rel="noopener"><img class="evidence-thumb" src="/api/evidence/${encodeURIComponent(item.id)}" alt="${label}"></a>`; }).join("");
     const responseControls = complaint.viewerIsOwner && complaint.status === "resolution_pending_confirmation" ? `<div class="row"><button class="btn grn" onclick="respondToResolution('${esc(complaint.ticketId)}','confirm')">Confirm resolution</button><button class="btn rust" onclick="respondToResolution('${esc(complaint.ticketId)}','reject')">Reject and reopen</button></div><p class="mut">Review the department evidence before responding.</p>` : complaint.viewerIsOwner && complaint.status === "closed" ? '<p>âœ… You confirmed this resolution.</p>' : '';
     const feedbackControls = complaint.viewerIsOwner && complaint.status === "closed"
@@ -734,11 +740,48 @@ function renderSavedComplaint(complaint) {
         <p class="mut">${esc(tr("Create a factual status video with the public ticket link. It leaves out your identity, private report details, exact location, and staff names."))}</p></div>
         <button type="button" class="btn rust" data-share-issue="${esc(complaint.ticketId)}">${esc(tr("Create share video"))}</button>
     </section>` : "";
-    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${shareControls}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}${feedbackControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
+    const legalDocumentControls = complaint.viewerIsOwner ? `<section class="case-document-card" aria-labelledby="caseDocumentTitle">
+        <div><p class="eyebrow">CITIZEN CASE RECORD</p><h3 id="caseDocumentTitle">Prepare a case document</h3>
+        <p class="mut">Create a printable record of this report, its timeline, and attached evidence. Review it and complete your details before sharing it with an adviser or authority. This is not an official filing or legal advice.</p></div>
+        <button type="button" class="btn line" data-case-document="${esc(complaint.ticketId)}">Prepare case document</button>
+    </section>` : "";
+    $("#tview").innerHTML = `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(complaint.ticketId)} · ${esc(displayTitle)}</h3><span class="tag s0">${esc(status)}</span></div>${state}${shareControls}${legalDocumentControls}${demoNotice}${description}<p><b>Category:</b> ${esc(complaint.category.label)} · <b>Department:</b> ${esc(complaint.department.name)}</p>${due}${priority}<p class="mut">${esc(location)}</p>${gps}<p class="mut">Created ${new Date(complaint.createdAt).toLocaleString("en-IN")}</p>${evidence ? `<h3>Report photos and resolution evidence</h3><div class="evidence-gallery">${evidence}</div>` : ''}${responseControls}${feedbackControls}</div><div class="two" style="margin-top:14px"><div class="card"><h3>Saved activity history</h3><div class="tl">${events || '<p class="mut">No events recorded.</p>'}</div></div><div class="card"><h3>What happens next?</h3><p class="mut">${complaint.status === 'resolution_pending_confirmation' ? 'Review the attached evidence and confirm the work, or reject it to reopen the report.' : complaint.status === 'closed' ? 'This complaint is closed.' : 'The assigned department will update this saved complaint through its work queue.'}</p></div></div>`;
+}
+
+function openCitizenCaseDocument(complaint) {
+    if (!complaint?.viewerIsOwner) return;
+    const docWindow = window.open("", "_blank");
+    if (!docWindow) { toast("Allow pop-ups for this site to prepare the case document."); return; }
+    const fmtDate = value => value ? new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Not recorded";
+    const reportLocation = complaint.location?.latitude != null && complaint.location?.longitude != null
+        ? `${Number(complaint.location.latitude).toFixed(6)}, ${Number(complaint.location.longitude).toFixed(6)}` : "No GPS coordinates recorded";
+    const timeline = (complaint.events || []).filter(event => event.eventType !== "note_added").map(event =>
+        `<li><strong>${esc(event.eventType?.replaceAll("_", " ") || "Update")}</strong><time>${esc(fmtDate(event.createdAt))}</time><p>${esc(event.note || "No additional note recorded.")}</p>${event.previousStatus || event.newStatus ? `<small>${esc(event.previousStatus?.replaceAll("_", " ") || "")} ${event.previousStatus && event.newStatus ? "→" : ""} ${esc(event.newStatus?.replaceAll("_", " ") || "")}</small>` : ""}</li>`
+    ).join("") || "<li>No workflow events are recorded.</li>";
+    const evidence = (complaint.evidence || []).map(item => {
+        const label = item.kind === "report" ? "Citizen report photo" : "Department resolution evidence";
+        const distance = Number.isFinite(item.captureDistanceMeters)
+            ? `<p>Evidence capture was recorded ${item.captureDistanceMeters.toFixed(1)} m from the report location (GPS accuracy ±${Number(item.captureAccuracyMeters || 0).toFixed(0)} m).</p>` : "";
+        const src = new URL(`/api/evidence/${encodeURIComponent(item.id)}`, window.location.origin).href;
+        return `<figure><img src="${src}" alt="${esc(label)}"><figcaption><strong>${esc(label)}</strong> · saved ${esc(fmtDate(item.createdAt))}${distance}</figcaption></figure>`;
+    }).join("") || "<p>No report or resolution photos are attached to this record.</p>";
+    const publicLink = new URL(`/?ticket=${encodeURIComponent(complaint.ticketId)}`, location.origin).href;
+    const locationLink = complaint.location?.latitude != null && complaint.location?.longitude != null
+        ? `https://www.openstreetmap.org/?mlat=${encodeURIComponent(complaint.location.latitude)}&mlon=${encodeURIComponent(complaint.location.longitude)}#map=17/${encodeURIComponent(complaint.location.latitude)}/${encodeURIComponent(complaint.location.longitude)}` : "";
+    const demo = complaint.isDemo ? `<aside class="demo">DEMONSTRATION RECORD — this ticket is seeded sample data, not a real municipal complaint.</aside>` : "";
+    const priority = complaint.priority ? `<p><b>Automated priority suggestion:</b> ${esc(priorityLabel(complaint.priority.level))} (${esc(prioritySourceLabel(complaint.priority.source))})</p><p>${esc(complaint.priority.reason || "")}</p>` : "";
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Case record · ${esc(complaint.ticketId)}</title><style>
+        *{box-sizing:border-box}body{margin:0;background:#eef2f6;color:#192632;font:15px/1.55 Arial,sans-serif}.toolbar{position:sticky;top:0;padding:12px;text-align:center;background:#101a24;color:#fff}.toolbar button{padding:10px 18px;border:0;border-radius:8px;background:#f19a5b;color:#111;font-weight:700;cursor:pointer}.sheet{max-width:850px;margin:24px auto;padding:42px;background:#fff;box-shadow:0 8px 30px #18263420}.brand{font-size:13px;letter-spacing:.12em;color:#9a5424;font-weight:bold}.title{margin:4px 0 0;font-size:30px}.sub{color:#536372;margin-top:0}.demo{margin:20px 0;padding:12px;border:2px solid #a33228;background:#fff1ef;color:#7e201a;font-weight:bold}.section{margin-top:28px;padding-top:18px;border-top:1px solid #d8e0e7}.facts{display:grid;grid-template-columns:1fr 1fr;gap:12px}.fact{padding:10px;background:#f4f7fa;border-radius:7px;overflow-wrap:anywhere}.fact small{display:block;color:#62717e}.description{white-space:pre-wrap}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:32px}.line{border-bottom:1px solid #596775;min-height:42px}.event-list{padding-left:22px}.event-list li{margin:0 0 16px}.event-list time{float:right;color:#5c6c79;font-size:12px}.event-list p{margin:3px 0}.photos{display:grid;grid-template-columns:1fr 1fr;gap:16px}.photos figure{margin:0;padding:10px;border:1px solid #d8e0e7;break-inside:avoid}.photos img{width:100%;max-height:420px;object-fit:contain;background:#e8edf2}.photos figcaption{font-size:12px;margin-top:7px}.footer{margin-top:35px;color:#62717e;font-size:11px}@media(max-width:650px){.sheet{margin:0;padding:22px}.facts,.photos,.signatures{grid-template-columns:1fr}.event-list time{float:none;display:block}}@media print{body{background:#fff}.toolbar{display:none}.sheet{max-width:none;margin:0;padding:0;box-shadow:none}.section{break-inside:avoid}.photos figure{break-inside:avoid}a{color:inherit;text-decoration:none}}
+        </style></head><body><div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button> <span>Use your browser’s print dialog and choose “Save as PDF”.</span></div><main class="sheet"><div class="brand">CIVICTRACK · CITIZEN-PREPARED RECORD</div><h1 class="title">Civic issue report and evidence summary</h1><p class="sub">Generated ${esc(fmtDate(new Date().toISOString()))} · Ticket ${esc(complaint.ticketId)}</p>${demo}
+        <section class="section"><h2>Report details</h2><div class="facts"><div class="fact"><small>Ticket ID</small><b>${esc(complaint.ticketId)}</b></div><div class="fact"><small>Current status</small><b>${esc(String(complaint.status || "Unknown").replaceAll("_", " "))}</b></div><div class="fact"><small>Issue title</small><b>${esc(complaint.title || "Not provided")}</b></div><div class="fact"><small>Category</small><b>${esc(complaint.category?.label || "Not recorded")}</b></div><div class="fact"><small>Assigned department</small><b>${esc(complaint.department?.name || "Not recorded")}</b></div><div class="fact"><small>Report submitted</small><b>${esc(fmtDate(complaint.createdAt))}</b></div><div class="fact"><small>Target deadline</small><b>${esc(fmtDate(complaint.dueAt))}</b></div><div class="fact"><small>Reported location</small><b>${esc(reportLocation)}</b>${locationLink ? `<a href="${locationLink}">View approximate map position</a>` : ""}</div></div><h3>Citizen description</h3><p class="description">${esc(complaint.description || "No description was provided.")}</p>${priority}<p><b>Public ticket page:</b> <a href="${esc(publicLink)}">${esc(publicLink)}</a></p></section>
+        <section class="section"><h2>Recorded timeline</h2><ol class="event-list">${timeline}</ol></section><section class="section"><h2>Attached evidence</h2>${evidence}</section>
+        <section class="section"><h2>Citizen completion</h2><p>Complete or correct these details as needed before submitting this record to another person or authority.</p><div class="signatures"><div><small>Citizen name</small><div class="line"></div></div><div><small>Contact details</small><div class="line"></div></div><div><small>Additional statement / corrections</small><div class="line"></div><div class="line"></div></div><div><small>Date and signature</small><div class="line"></div></div></div></section>
+        <p class="footer">This document is generated from the saved CivicTrack record for the citizen’s review. It is not a court document, legal notice, affidavit, or proof that an authority received or accepted a filing. Verify the details and seek qualified legal advice about any action you choose to take.</p></main></body></html>`;
+    docWindow.document.open(); docWindow.document.write(html); docWindow.document.close();
 }
 
 /* Public escalation updates: generated locally, with no private report data or staff names. */
-let activeShareReport = null, generatedShareFile = null, generatedShareUrl = null, selectedIssueVideo = null, selectedIssueVideoUrl = null, shareRecorder = null;
+let activeShareReport = null, generatedShareFile = null, generatedShareUrl = null, selectedIssueVideo = null, selectedIssueVideoUrl = null, shareRecorder = null, overlayRecorder = null, overlayVideoSource = null, overlayAudioContext = null, overlayStream = null, overlayAnimationFrame = 0, overlayJob = 0;
 const shareDialog = $("#escalationShareDialog");
 function createShareLink(ticketId) {
     const url = new URL(location.pathname || "/", location.origin);
@@ -791,6 +834,108 @@ function drawShareVideoFrame(context, canvas, report, progress = 0) {
     context.fillStyle = "rgba(255,255,255,.16)"; context.fillRect(58, 1236, 604, 6);
     context.fillStyle = "#f1a978"; context.fillRect(58, 1236, 604 * Math.max(0, Math.min(1, progress)), 6);
 }
+function drawSelectedClipFrame(context, canvas, video, report) {
+    const width = canvas.width, height = canvas.height;
+    const gradient = context.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, "#102c27"); gradient.addColorStop(1, "#14202d");
+    context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+    const videoTop = 224, videoHeight = 820, inset = 24;
+    if (video.videoWidth && video.videoHeight) {
+        const scale = Math.max((width - inset * 2) / video.videoWidth, videoHeight / video.videoHeight);
+        const drawWidth = video.videoWidth * scale, drawHeight = video.videoHeight * scale;
+        context.save(); context.beginPath(); context.rect(inset, videoTop, width - inset * 2, videoHeight); context.clip();
+        context.drawImage(video, (width - drawWidth) / 2, videoTop + (videoHeight - drawHeight) / 2, drawWidth, drawHeight);
+        context.restore();
+    }
+    context.fillStyle = "rgba(7, 15, 23, .94)"; context.fillRect(0, 0, width, 210);
+    context.fillStyle = "#f1a978"; context.fillRect(28, 34, 9, 42);
+    context.textAlign = "left"; context.fillStyle = "#f4f7f3"; context.font = "700 31px Arial, sans-serif";
+    context.fillText("CivicTrack", 54, 64);
+    context.fillStyle = "#c8d5dc"; context.font = "700 15px Arial, sans-serif";
+    context.fillText(tr("PUBLIC ISSUE UPDATE"), 28, 105);
+    context.fillStyle = "#ffffff"; context.font = "700 27px Arial, sans-serif";
+    context.fillText(`${tr(report.category?.label || "Civic issue")} · ${report.ticketId}`, 28, 146, width - 56);
+    const overdueDays = report.dueAt && Date.now() > new Date(report.dueAt).getTime()
+        ? Math.max(1, Math.floor((Date.now() - new Date(report.dueAt).getTime()) / 86400000)) : 0;
+    context.fillStyle = "#f1a978"; context.font = "700 18px Arial, sans-serif";
+    context.fillText(overdueDays ? `${tr("Escalated")} · ${overdueDays} ${tr("days past the target date")}` : tr("Escalation recorded"), 28, 180, width - 56);
+    context.fillStyle = "rgba(7, 15, 23, .96)"; context.fillRect(0, 1052, width, 228);
+    context.fillStyle = "#f1a978"; context.font = "800 29px Arial, sans-serif";
+    context.fillText(tr("STILL UNRESOLVED"), 28, 1108);
+    context.fillStyle = "#ffffff"; context.font = "700 22px Arial, sans-serif";
+    context.fillText(`${tr("PUBLIC TICKET")}: ${report.ticketId}`, 28, 1155, width - 56);
+    context.fillStyle = "#c8d5dc"; context.font = "400 17px Arial, sans-serif";
+    context.fillText(`${location.host} · ${tr("Approximate public status")}`, 28, 1200, width - 56);
+    context.fillStyle = "#f1a978"; context.fillRect(28, 1240, width - 56, 5);
+}
+function stopOverlayRecorder() {
+    overlayJob++;
+    if (overlayAnimationFrame) cancelAnimationFrame(overlayAnimationFrame);
+    overlayAnimationFrame = 0;
+    if (overlayRecorder?.state === "recording") {
+        try { overlayRecorder.stop(); } catch { }
+    }
+    overlayRecorder = null;
+    if (overlayStream) { overlayStream.getTracks().forEach(track => track.stop()); overlayStream = null; }
+    if (overlayVideoSource) { overlayVideoSource.pause(); overlayVideoSource.removeAttribute("src"); overlayVideoSource.load(); overlayVideoSource = null; }
+    if (overlayAudioContext) { void overlayAudioContext.close().catch(() => {}); overlayAudioContext = null; }
+}
+async function compositeSelectedClip(file) {
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Video overlay export is not supported in this browser. Try a browser with MediaRecorder support.");
+    const job = ++overlayJob;
+    const video = document.createElement("video");
+    video.preload = "auto"; video.playsInline = true; video.src = selectedIssueVideoUrl;
+    overlayVideoSource = video;
+    await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = () => reject(new Error("This video could not be opened for adding the ticket details."));
+    });
+    if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error("This video has no readable duration.");
+    if (video.duration > 30) throw new Error("Choose a clip that is 30 seconds or shorter so ticket details can be added.");
+
+    const canvas = $("#shareVideoCanvas"), context = canvas.getContext("2d");
+    const canvasStream = canvas.captureStream(24), tracks = [...canvasStream.getVideoTracks()];
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+        try {
+            overlayAudioContext = new AudioContextClass();
+            const source = overlayAudioContext.createMediaElementSource(video);
+            const destination = overlayAudioContext.createMediaStreamDestination();
+            source.connect(destination);
+            tracks.push(...destination.stream.getAudioTracks());
+            await overlayAudioContext.resume();
+        } catch { if (overlayAudioContext) { await overlayAudioContext.close().catch(() => {}); overlayAudioContext = null; } }
+    }
+
+    try { await video.play(); }
+    catch { stopOverlayRecorder(); throw new Error("The video could not be played for ticket overlay export."); }
+    if (job !== overlayJob) throw new Error("Video preparation was cancelled.");
+
+    const mimeType = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+        .find(type => MediaRecorder.isTypeSupported(type));
+    const stream = new MediaStream(tracks); overlayStream = stream;
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1100000 }) : new MediaRecorder(stream);
+    overlayRecorder = recorder;
+    const chunks = [];
+    const recorded = new Promise((resolve, reject) => {
+        recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+        recorder.onerror = () => reject(new Error("The video overlay export failed. Try another clip."));
+        recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || "video/webm" }));
+        video.onended = () => { if (recorder.state === "recording") recorder.stop(); };
+    });
+    recorder.start(300);
+    const draw = () => {
+        drawSelectedClipFrame(context, canvas, video, activeShareReport);
+        if (job === overlayJob && recorder.state === "recording" && !video.ended) overlayAnimationFrame = requestAnimationFrame(draw);
+    };
+    draw();
+    try {
+        const blob = await recorded;
+        if (job !== overlayJob) throw new Error("Video preparation was cancelled.");
+        if (!blob.size) throw new Error("The selected clip could not be prepared.");
+        return blob;
+    } finally { stopOverlayRecorder(); }
+}
 function openIssueShare(report) {
     if (!report?.isEscalated || !["assigned", "in_progress", "reopened"].includes(report.status)) return;
     activeShareReport = { ticketId: report.ticketId, category: report.category, dueAt: report.dueAt, status: report.status };
@@ -800,15 +945,23 @@ function openIssueShare(report) {
     selectedIssueVideoUrl = null;
     const canvas = $("#shareVideoCanvas"), context = canvas.getContext("2d");
     drawShareVideoFrame(context, canvas, activeShareReport, 0.08);
-    $("#shareVideoPreview").hidden = true; $("#shareVideoPreview").removeAttribute("src"); canvas.hidden = false;
+    $("#shareVideoPreview").hidden = true; $("#shareVideoPreview").removeAttribute("src");
+    $("#shareVideoPlaceholder").hidden = false;
+    $("#shareDestinations").hidden = true;
+    const overdueDays = activeShareReport.dueAt && Date.now() > new Date(activeShareReport.dueAt).getTime()
+        ? Math.max(1, Math.floor((Date.now() - new Date(activeShareReport.dueAt).getTime()) / 86400000)) : 0;
+    const statusSummary = overdueDays
+        ? `${tr("Escalated")} · ${overdueDays} ${tr("days past the target date")}`
+        : `${tr(publicStatusName(activeShareReport.status))} · ${tr("Escalation recorded")}`;
+    $("#shareReportSummary").innerHTML = `<span class="share-ticket-kicker">${esc(tr("PUBLIC TICKET"))}</span><strong>${esc(tr("SLA ESCALATION"))}</strong><span class="share-ticket-id">${esc(activeShareReport.ticketId)}</span><span class="share-ticket-meta">${esc(tr(activeShareReport.category?.label || "Civic issue"))} · ${esc(statusSummary)}</span>`;
     $("#issueVideoFile").value = ""; $("#sharePublicConsent").checked = false;
     $("#shareVideoStatus").textContent = tr("Create the status video or record/select a clip. Videos stay on this device until you choose to share them.");
-    $("#downloadIssueVideo").hidden = true; $("#shareIssueVideo").hidden = true; $("#shareFacebook").hidden = true; $("#shareX").hidden = true; $("#copyShareCaption").hidden = true;
+    $("#downloadIssueVideo").hidden = true; $("#shareIssueVideo").hidden = true; $("#shareX").hidden = true; $("#shareFacebook").hidden = true; $("#copyShareCaption").hidden = true;
     window.civicI18n?.localize(shareDialog);
     if (!shareDialog.open) shareDialog.showModal();
 }
 function downloadShareFile(file) {
-    const url = selectedIssueVideoUrl || generatedShareUrl || (selectedIssueVideoUrl = URL.createObjectURL(file));
+    const url = generatedShareUrl || selectedIssueVideoUrl || (selectedIssueVideoUrl = URL.createObjectURL(file));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = file.name || `civictrack-${activeShareReport.ticketId}.video`; anchor.click();
 }
 function finishShareVideo(blob) {
@@ -816,9 +969,9 @@ function finishShareVideo(blob) {
     const ext = blob.type.includes("mp4") ? "mp4" : "webm";
     generatedShareFile = new File([blob], `civictrack-${activeShareReport.ticketId}.${ext}`, { type: blob.type || "video/webm" });
     generatedShareUrl = URL.createObjectURL(blob);
-    const video = $("#shareVideoPreview"); video.src = generatedShareUrl; video.hidden = false; $("#shareVideoCanvas").hidden = true;
+    const video = $("#shareVideoPreview"); video.src = generatedShareUrl; video.hidden = false; $("#shareVideoPlaceholder").hidden = true;
     $("#shareVideoStatus").textContent = `${tr("Video ready")}: ${(blob.size / 1024 / 1024).toFixed(1)} MB. Review it before sharing.`;
-    $("#downloadIssueVideo").hidden = false; $("#shareIssueVideo").hidden = false; $("#shareFacebook").hidden = false; $("#shareX").hidden = false; $("#copyShareCaption").hidden = false;
+    $("#downloadIssueVideo").hidden = false; $("#shareIssueVideo").hidden = false; $("#shareX").hidden = false; $("#shareFacebook").hidden = false; $("#shareDestinations").hidden = false; $("#copyShareCaption").hidden = false;
     const link = createShareLink(activeShareReport.ticketId), caption = shareCaption(activeShareReport);
     $("#shareFacebook").href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}&quote=${encodeURIComponent(caption)}`;
     $("#shareX").href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
@@ -853,22 +1006,33 @@ $("#generateIssueVideo").onclick = () => {
         $("#generateIssueVideo").disabled = false;
     }
 };
-$("#issueVideoFile").addEventListener("change", event => {
+$("#issueVideoFile").addEventListener("change", async event => {
     const file = event.target.files?.[0]; if (!file) return;
     if (!file.type.startsWith("video/") || file.size > 100 * 1024 * 1024) { event.target.value = ""; $("#shareVideoStatus").textContent = tr("Choose a video under 100 MB."); return; }
+    stopOverlayRecorder();
+    if (generatedShareUrl) URL.revokeObjectURL(generatedShareUrl);
+    generatedShareUrl = null; generatedShareFile = null;
     selectedIssueVideo = file;
     if (selectedIssueVideoUrl) URL.revokeObjectURL(selectedIssueVideoUrl);
     selectedIssueVideoUrl = URL.createObjectURL(file);
-    const video = $("#shareVideoPreview"); video.src = selectedIssueVideoUrl; video.hidden = false; $("#shareVideoCanvas").hidden = true;
-    $("#shareVideoStatus").textContent = `${tr("Selected local video")}: ${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB. It has not been uploaded.`;
-    $("#downloadIssueVideo").hidden = false; $("#shareIssueVideo").hidden = false; $("#shareFacebook").hidden = false; $("#shareX").hidden = false; $("#copyShareCaption").hidden = false;
-    const link = createShareLink(activeShareReport.ticketId), caption = shareCaption(activeShareReport);
-    $("#shareFacebook").href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}&quote=${encodeURIComponent(caption)}`;
-    $("#shareX").href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
+    const preview = $("#shareVideoPreview"); preview.pause(); preview.removeAttribute("src"); preview.hidden = true;
+    $("#shareVideoPlaceholder").hidden = false;
+    $("#downloadIssueVideo").hidden = true; $("#shareIssueVideo").hidden = true; $("#shareX").hidden = true; $("#shareFacebook").hidden = true; $("#shareDestinations").hidden = true; $("#copyShareCaption").hidden = true;
+    $("#shareVideoStatus").textContent = tr("Adding the public ticket and escalation details to") + ": " + file.name;
+    try {
+        const blob = await compositeSelectedClip(file);
+        if (selectedIssueVideo !== file || !shareDialog.open) return;
+        finishShareVideo(blob);
+        if (generatedShareFile) $("#shareVideoStatus").textContent = tr("Ticket ID and escalation details are embedded in this downloaded video.") + " · " + (blob.size / 1024 / 1024).toFixed(1) + " MB";
+    } catch (error) {
+        if (selectedIssueVideo !== file || !shareDialog.open) return;
+        stopOverlayRecorder();
+        $("#shareVideoStatus").textContent = error.message || tr("The selected clip could not be prepared.");
+    }
 });
-$("#downloadIssueVideo").onclick = () => { const file = selectedIssueVideo || generatedShareFile; if (file) downloadShareFile(file); };
+$("#downloadIssueVideo").onclick = () => { const file = generatedShareFile || selectedIssueVideo; if (file) downloadShareFile(file); };
 $("#shareIssueVideo").onclick = async () => {
-    const file = selectedIssueVideo || generatedShareFile;
+    const file = generatedShareFile || selectedIssueVideo;
     if (!file) return;
     if (!$("#sharePublicConsent").checked) { $("#shareVideoStatus").textContent = tr("Review the public-sharing notice before continuing."); return; }
     const data = { files: [file], title: tr("CivicTrack public issue update"), text: shareCaption(activeShareReport), url: createShareLink(activeShareReport.ticketId) };
@@ -885,6 +1049,7 @@ $("#copyShareCaption").onclick = async () => {
 };
 shareDialog.addEventListener("click", event => { if (event.target.closest("[data-share-close]")) shareDialog.close(); });
 shareDialog.addEventListener("close", () => {
+    stopOverlayRecorder();
     if (shareRecorder?.state === "recording") { shareRecorder.ondataavailable = null; shareRecorder.onstop = null; try { shareRecorder.stop(); } catch { } shareRecorder = null; }
     $("#shareVideoPreview").pause(); $("#shareVideoPreview").removeAttribute("src");
     if (generatedShareUrl) URL.revokeObjectURL(generatedShareUrl);
@@ -912,6 +1077,8 @@ async function submitOfficerFeedback(ticketId, button) {
 $("#tview").addEventListener("click", event => {
     const shareButton = event.target.closest("[data-share-issue]");
     if (shareButton && currentSavedComplaintForShare?.ticketId === shareButton.dataset.shareIssue) { openIssueShare(currentSavedComplaintForShare); return; }
+    const caseDocumentButton = event.target.closest("[data-case-document]");
+    if (caseDocumentButton && currentSavedComplaintForShare?.ticketId === caseDocumentButton.dataset.caseDocument) { openCitizenCaseDocument(currentSavedComplaintForShare); return; }
     const button = event.target.closest("[data-submit-feedback]");
     if (button) submitOfficerFeedback(button.dataset.submitFeedback, button);
 });
@@ -1015,6 +1182,7 @@ const DUE_SOON_WINDOW_MS = 4 * 60 * 60 * 1000;
 const DASHBOARD_ACTIONABLE = new Set(["assigned", "in_progress", "reopened"]);
 let dashboardQueue = [], dashboardCounts = {}, dashboardOverview = null;
 let dashboardLoaded = false, dashboardPending = null, dashboardFilter = "all", dashboardDrawerTrigger = null;
+let activeDepartmentComplaint = null, departmentEvidenceStream = null, departmentEvidenceCapture = null;
 
 function dashStatus(status) {
     const labels = { assigned: "Assigned", in_progress: "In progress", reopened: "Reopened", resolution_pending_confirmation: "Awaiting citizen", closed: "Closed" };
@@ -1268,13 +1436,17 @@ function dashboardMediaSection(title, files, emptyMessage) {
     const content = files.map(file => {
         const url = "/api/evidence/" + encodeURIComponent(file.id);
         const alt = file.kind === "report" ? "Original report photograph" : "Resolution evidence photograph";
+        const locationNote = file.kind === "resolution" && Number.isFinite(file.captureDistanceMeters)
+            ? '<small>Captured ' + esc(file.captureDistanceMeters.toFixed(1)) + ' m from reported location (GPS accuracy ±' + esc(Number(file.captureAccuracyMeters || 0).toFixed(0)) + ' m).</small>' : '';
         return '<a class="dept-evidence-item" href="' + url + '" target="_blank" rel="noopener"><img src="' + url +
-            '" alt="' + esc(alt) + '" loading="lazy"><span>' + esc(dashDateTime(file.createdAt)) + '</span></a>';
+            '" alt="' + esc(alt) + '" loading="lazy"><span>' + esc(dashDateTime(file.createdAt)) + '</span>' + locationNote + '</a>';
     }).join("");
     return '<section class="dept-detail-section"><h3>' + esc(title) + '</h3>' +
         (content ? '<div class="dept-evidence-gallery">' + content + '</div>' : '<p class="dept-muted">' + esc(emptyMessage) + '</p>') + '</section>';
 }
 async function dOpen(ticketId) {
+    stopDepartmentEvidenceCamera();
+    activeDepartmentComplaint = null;
     if (!$("#drawer").classList.contains("on")) dashboardDrawerTrigger = document.activeElement;
     $("#dBody").innerHTML = '<p class="dept-muted" role="status">Loading complaint details...</p>';
     $("#drawer").classList.add("on");
@@ -1282,6 +1454,7 @@ async function dOpen(ticketId) {
         const response = await fetch("/api/officer/complaints/" + encodeURIComponent(ticketId));
         const payload = await dashboardJson(response, "Could not load complaint details."), item = payload.complaint;
         if (!item || typeof item !== "object") throw new Error("Complaint details were not available.");
+        activeDepartmentComplaint = item;
         const status = String(item.status || "unknown"), canStart = status === "assigned" || status === "reopened";
         const canComplete = status === "in_progress", evidence = Array.isArray(item.evidence) ? item.evidence : [];
         const currentPriority = PRIORITY_LABELS[item.priority?.level] ? item.priority.level : "normal";
@@ -1314,10 +1487,14 @@ async function dOpen(ticketId) {
                 ? '<button type="button" class="btn rust dept-primary-action" data-dashboard-status="resolution_pending_confirmation" data-ticket="' +
                 esc(item.ticketId) + '">Submit for citizen confirmation</button>'
                 : '<button type="button" class="btn rust dept-primary-action" disabled aria-describedby="evidenceRequired">Upload evidence before requesting confirmation</button><p class="dept-muted" id="evidenceRequired">At least one successfully uploaded resolution photograph is required.</p>') +
-            '<div class="dept-upload-control"><label class="btn line" for="evidenceFile">Upload resolution evidence</label>' +
-            '<input id="evidenceFile" data-ticket="' + esc(item.ticketId) + '" type="file" accept="image/jpeg,image/png,image/webp" hidden>' +
-            '<p class="dept-muted">JPEG, PNG or WebP, up to 5 MB. Uploads are private to authorized viewers.</p>' +
-            '<p id="evidenceStatus" class="dept-upload-feedback" role="status" aria-live="polite"></p></div></div>';
+            (hasGps ? '<div class="dept-upload-control"><p class="dept-muted">Capture a live photo at the reported issue location. The GPS fix and its accuracy margin must fit inside the 100 m radius.</p>' +
+                '<button class="btn line" type="button" data-evidence-start="' + esc(item.ticketId) + '">📍 Check location and open camera</button>' +
+                '<video id="evidenceCameraPreview" autoplay playsinline muted hidden></video><img id="evidencePhotoPreview" alt="Captured live resolution evidence" hidden>' +
+                '<div class="row"><button class="btn rust" type="button" data-evidence-capture hidden>Take live photo</button>' +
+                '<button class="btn line" type="button" data-evidence-retake hidden>Retake live photo</button>' +
+                '<button class="btn grn" type="button" data-evidence-upload hidden>Upload captured photo</button></div>' +
+                '<p id="evidenceStatus" class="dept-upload-feedback" role="status" aria-live="polite"></p></div>' :
+                '<p class="dept-muted">This report has no GPS coordinates, so location-checked resolution evidence cannot be added.</p>') + '</div></div>';
         else if (status === "resolution_pending_confirmation") action = '<p class="dept-muted">This resolution is awaiting citizen confirmation.</p>';
         else if (status === "closed") action = '<p class="dept-muted">This complaint is closed following the citizen workflow.</p>';
         const priorityOptions = Object.keys(PRIORITY_LABELS).map(level => '<option value="' + level + '"' + (level === currentPriority ? ' selected' : '') + '>' + esc(priorityLabel(level)) + '</option>').join("");
@@ -1353,40 +1530,115 @@ async function dOpen(ticketId) {
         return false;
     }
 }
-async function uploadEvidence(ticketId, input) {
-    const file = input.files?.[0];
-    if (!file) return;
-    const status = $("#evidenceStatus"), label = $("#dBody label[for='evidenceFile']");
-    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
-        if (status) status.textContent = "Choose a JPEG, PNG, or WebP image.";
-        input.value = "";
+function stopDepartmentEvidenceCamera() {
+    if (departmentEvidenceStream) departmentEvidenceStream.getTracks().forEach(track => track.stop());
+    departmentEvidenceStream = null;
+    const video = $("#evidenceCameraPreview");
+    if (video) { video.pause(); video.srcObject = null; video.hidden = true; }
+    const take = $("#dBody [data-evidence-capture]");
+    if (take) take.hidden = true;
+}
+function evidenceGpsCheck(position, complaint) {
+    const location = complaint?.location || {};
+    if (location.latitude == null || location.longitude == null) throw new Error("This report has no GPS location to compare with.");
+    const latitude = position.coords.latitude, longitude = position.coords.longitude, accuracyMeters = position.coords.accuracy;
+    if (![latitude, longitude, accuracyMeters].every(Number.isFinite) || accuracyMeters < 0 || accuracyMeters > 100) {
+        throw new Error("GPS accuracy must be 100 meters or better. Move outdoors and try again.");
+    }
+    const distance = distanceMeters({ latitude: Number(location.latitude), longitude: Number(location.longitude) }, { latitude, longitude });
+    if (distance + accuracyMeters > 100) throw new Error("You are outside the allowed 100 m area. Move closer to the reported location and retry.");
+    return { latitude, longitude, accuracyMeters, distanceMeters: distance };
+}
+function readFreshGpsPosition() {
+    if (!navigator.geolocation) return Promise.reject(new Error("This browser does not support GPS location access."));
+    return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve,
+        error => reject(new Error(error.code === error.PERMISSION_DENIED ? "Location permission was denied. Allow it in browser settings." : "Could not get a GPS fix. Move outdoors and try again.")),
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
+}
+async function startDepartmentEvidenceCamera(ticketId) {
+    const status = $("#evidenceStatus"), complaint = activeDepartmentComplaint;
+    if (!complaint || complaint.ticketId !== ticketId) return;
+    stopDepartmentEvidenceCamera();
+    if (departmentEvidenceCapture?.previewUrl) URL.revokeObjectURL(departmentEvidenceCapture.previewUrl);
+    departmentEvidenceCapture = null;
+    const preview = $("#evidencePhotoPreview"); if (preview) { preview.removeAttribute("src"); preview.hidden = true; }
+    const retake = $("#dBody [data-evidence-retake]"), upload = $("#dBody [data-evidence-upload]");
+    if (retake) retake.hidden = true; if (upload) upload.hidden = true;
+    try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Live camera capture needs a secure connection and a supported browser.");
+        if (status) status.textContent = "Checking your live GPS location…";
+        const gps = evidenceGpsCheck(await readFreshGpsPosition(), complaint);
+        departmentEvidenceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        const video = $("#evidenceCameraPreview");
+        video.srcObject = departmentEvidenceStream; video.hidden = false; await video.play();
+        const take = $("#dBody [data-evidence-capture]"); if (take) take.hidden = false;
+        if (status) status.textContent = `Live camera ready. Report pin is ${gps.distanceMeters.toFixed(1)} m away; GPS accuracy ±${gps.accuracyMeters.toFixed(0)} m. We will check location again when you take the photo.`;
+    } catch (error) {
+        stopDepartmentEvidenceCamera();
+        if (status) status.textContent = error.message || "Could not open the camera or verify your location.";
+    }
+}
+async function captureDepartmentEvidence(button) {
+    const status = $("#evidenceStatus"), video = $("#evidenceCameraPreview"), complaint = activeDepartmentComplaint;
+    if (!video?.videoWidth || !video?.videoHeight || !departmentEvidenceStream || !complaint) {
+        if (status) status.textContent = "Open the live camera before taking evidence.";
         return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-        if (status) status.textContent = "This image exceeds the 5 MB limit.";
-        input.value = "";
+    button.disabled = true;
+    try {
+        if (status) status.textContent = "Checking GPS at capture time…";
+        const gps = evidenceGpsCheck(await readFreshGpsPosition(), complaint);
+        const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .88));
+        if (!blob) throw new Error("The live photo could not be captured. Try again.");
+        if (blob.size > 5 * 1024 * 1024) throw new Error("The captured photo exceeds the 5 MB limit. Retake it in a lower resolution.");
+        if (departmentEvidenceCapture?.previewUrl) URL.revokeObjectURL(departmentEvidenceCapture.previewUrl);
+        const previewUrl = URL.createObjectURL(blob);
+        departmentEvidenceCapture = { blob, ...gps, previewUrl };
+        stopDepartmentEvidenceCamera();
+        const preview = $("#evidencePhotoPreview"); preview.src = previewUrl; preview.hidden = false;
+        $("#dBody [data-evidence-retake]").hidden = false;
+        $("#dBody [data-evidence-upload]").hidden = false;
+        if (status) status.textContent = `Live photo captured ${gps.distanceMeters.toFixed(1)} m from the report pin (GPS accuracy ±${gps.accuracyMeters.toFixed(0)} m). Within the 100 m limit.`;
+    } catch (error) {
+        if (status) status.textContent = error.message || "The live photo could not be captured.";
+    } finally { button.disabled = false; }
+}
+async function uploadEvidence(ticketId, button) {
+    const status = $("#evidenceStatus"), capture = departmentEvidenceCapture;
+    if (!capture || !activeDepartmentComplaint || activeDepartmentComplaint.ticketId !== ticketId) {
+        if (status) status.textContent = "Take a live photo before uploading evidence.";
         return;
     }
-    input.disabled = true;
-    if (label) label.textContent = "Uploading...";
-    if (status) status.textContent = "Uploading evidence securely...";
+    button.disabled = true;
+    if (status) status.textContent = "Uploading the location-checked live photo securely…";
     try {
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", new File([capture.blob], `resolution-${ticketId}.jpg`, { type: "image/jpeg" }));
+        form.append("latitude", String(capture.latitude));
+        form.append("longitude", String(capture.longitude));
+        form.append("accuracyMeters", String(capture.accuracyMeters));
         const response = await fetch("/api/officer/complaints/" + encodeURIComponent(ticketId) + "/evidence", { method: "POST", body: form });
         const payload = await dashboardJson(response, "Evidence upload failed.");
-        if (!payload.evidence?.id) throw new Error("The server did not confirm the uploaded evidence.");
+        if (!payload.evidence?.id) throw new Error("The server did not confirm the evidence upload.");
+        if (capture.previewUrl) URL.revokeObjectURL(capture.previewUrl);
+        departmentEvidenceCapture = null;
         const refreshed = await dOpen(ticketId);
-        toast(refreshed ? "Resolution evidence uploaded" : "Evidence was uploaded, but refreshed case details could not be loaded.");
+        toast(refreshed ? "Resolution evidence uploaded from the reported location." : "Evidence uploaded; details could not be refreshed.");
         await loadOfficerDashboard();
     } catch (error) {
         if (status) status.textContent = error.message;
         toast(error.message);
-        input.disabled = false;
-        if (label) label.textContent = "Upload resolution evidence";
+        button.disabled = false;
     }
 }
 const dClose = () => {
+    stopDepartmentEvidenceCamera();
+    if (departmentEvidenceCapture?.previewUrl) URL.revokeObjectURL(departmentEvidenceCapture.previewUrl);
+    departmentEvidenceCapture = null; activeDepartmentComplaint = null;
     $("#drawer").classList.remove("on");
     const trigger = dashboardDrawerTrigger;
     dashboardDrawerTrigger = null;
@@ -1458,13 +1710,18 @@ $("#queue").addEventListener("click", event => {
 });
 $("#dBody").addEventListener("click", event => {
     if (event.target.closest("[data-dashboard-close]")) return dClose();
+    const evidenceStart = event.target.closest("[data-evidence-start]");
+    if (evidenceStart) return startDepartmentEvidenceCamera(evidenceStart.dataset.evidenceStart);
+    const evidenceCapture = event.target.closest("[data-evidence-capture]");
+    if (evidenceCapture) return captureDepartmentEvidence(evidenceCapture);
+    const evidenceRetake = event.target.closest("[data-evidence-retake]");
+    if (evidenceRetake) return startDepartmentEvidenceCamera(activeDepartmentComplaint?.ticketId);
+    const evidenceUpload = event.target.closest("[data-evidence-upload]");
+    if (evidenceUpload) return uploadEvidence(activeDepartmentComplaint?.ticketId, evidenceUpload);
     const button = event.target.closest("[data-dashboard-status]");
     if (button) { button.disabled = true; act(button.dataset.ticket, button.dataset.dashboardStatus); }
     const priorityButton = event.target.closest("[data-dashboard-priority]");
     if (priorityButton) changePriority(priorityButton.dataset.dashboardPriority, priorityButton);
-});
-$("#dBody").addEventListener("change", event => {
-    if (event.target.matches("#evidenceFile")) uploadEvidence(event.target.dataset.ticket, event.target);
 });
 $("#drawer").addEventListener("click", event => { if (event.target.id === "drawer") dClose(); });
 document.addEventListener("keydown", event => { if (event.key === "Escape" && $("#drawer").classList.contains("on")) dClose(); });

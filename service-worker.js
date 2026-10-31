@@ -1,4 +1,4 @@
-const CACHE_NAME = "civictrack-shell-v2";
+const CACHE_NAME = "civictrack-shell-v9";
 const SHELL = ["/", "/index.html", "/style.css", "/i18n.js", "/script.js", "/manifest.webmanifest", "/icons/civictrack.svg", "/icons/civictrack-192.png", "/icons/civictrack-512.png", "/icons/apple-touch-icon.png"];
 self.addEventListener("install", event => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)));
