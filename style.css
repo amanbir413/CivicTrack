@@ -5892,6 +5892,12 @@ body.dept:not(.landing-active) {
     text-align: center
 }
 
+#v-dash .dept-empty-action {
+    display: block;
+    min-height: 40px;
+    margin: 12px auto 0
+}
+
 #v-dash .dept-issue-cell {
     min-width: 190px
 }

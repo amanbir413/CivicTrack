@@ -1076,7 +1076,7 @@ function dashMatches(item, filter, at) {
     const due = dashDue(item, at);
     if (filter === "all") return true;
     if (filter === "open") return item.status !== "closed";
-    if (filter === "action_required") return due.overdue || item.status === "reopened";
+    if (filter === "action_required") return due.overdue || item.status === "reopened" || (DASHBOARD_ACTIONABLE.has(item?.status) && item.isEscalated === true);
     if (filter === "overdue") return due.overdue;
     if (filter === "due_soon") return due.dueSoon;
     if (filter === "escalated") return item.isEscalated === true;
@@ -1102,9 +1102,10 @@ function renderDashboardKpis() {
         const active = dashboardQueue.filter(item => DASHBOARD_ACTIONABLE.has(item.status));
         const reopened = new Set(active.filter(item => item.status === "reopened").map(item => String(item.ticketId)));
         const overdue = new Set(active.filter(item => dashDue(item).overdue).map(item => String(item.ticketId)));
-        const action = new Set([...reopened, ...overdue]), overdueOnly = [...overdue].filter(id => !reopened.has(id)).length;
+        const escalated = new Set(active.filter(item => item.isEscalated === true).map(item => String(item.ticketId)));
+        const action = new Set([...reopened, ...overdue, ...escalated]), overdueOnly = [...overdue].filter(id => !reopened.has(id)).length;
         const soon = active.filter(item => dashDue(item).dueSoon).length;
-        items = [["Action required", action.size, overdueOnly + " overdue; " + reopened.size + " reopened", "action_required"],
+        items = [["Action required", action.size, "Includes " + overdueOnly + " overdue, " + reopened.size + " reopened, " + escalated.size + " escalated", "action_required"],
         ["Assigned to start", count("assigned"), "Awaiting an officer work update", "assigned"],
         ["In progress", count("in_progress"), "Currently being worked on", "in_progress"],
         ["Due soon", soon, "Deadline within the next 4 hours", "due_soon"],
@@ -1140,7 +1141,11 @@ function renderDashboardQueue() {
     const admin = currentUser?.role === "administrator", at = Date.now();
     const rawSearch = $("#queueSearch").value.trim(), query = rawSearch.toLocaleLowerCase();
     const results = dashboardQueue.filter(item => {
-        const text = [item.ticketId, item.title, item.category?.label].filter(Boolean).join(" ").toLocaleLowerCase();
+        const loc = item.location || {};
+        const text = [item.ticketId, item.title, item.category?.label, item.department?.name,
+        dashStatus(item.status), priorityLabel(item.priority?.level), item.priority?.reason,
+        loc.latitude, loc.longitude, loc.mapX, loc.mapY]
+            .filter(value => value !== null && value !== undefined && value !== "").join(" ").toLocaleLowerCase();
         return (!query || text.includes(query)) && dashMatches(item, dashboardFilter, at);
     }).sort((a, b) => compareDashboard(a, b, at));
     $("#queueHead").innerHTML = '<tr><th scope="col">Priority</th><th scope="col">Ticket and issue</th>' +
@@ -1150,8 +1155,10 @@ function renderDashboardQueue() {
         : "Showing " + results.length + " of " + dashboardQueue.length + " complaints" + (query ? ' matching "' + rawSearch + '"' : "");
     const cols = admin ? 7 : 6;
     if (!results.length) {
-        const message = dashboardQueue.length ? "No complaints match this search and filter. Clear the search or choose All complaints." : "No complaints are available in this authorized queue.";
-        $("#queue").innerHTML = '<tr class="dept-empty-row"><td colspan="' + cols + '">' + esc(message) + '</td></tr>';
+        const message = dashboardQueue.length ? "No complaints match this search and filter." : "No complaints are available in this authorized queue.";
+        const clear = dashboardQueue.length && (query || dashboardFilter !== "all")
+            ? '<button type="button" class="btn line dept-empty-action" data-dashboard-clear>Clear search and filters</button>' : "";
+        $("#queue").innerHTML = '<tr class="dept-empty-row"><td colspan="' + cols + '"><span>' + esc(message) + '</span>' + clear + '</td></tr>';
         renderDashboardKpis();
         return;
     }
@@ -1418,6 +1425,10 @@ async function changePriority(ticketId, button) {
     }
 }
 $("#queueRefresh").onclick = () => loadOfficerDashboard();
+// Keep the department queue fresh while it is open without polling hidden tabs.
+window.setInterval(() => {
+    if (view === "dash" && document.visibilityState === "visible" && !dashboardPending) void loadOfficerDashboard();
+}, 60000);
 $("#queueSearch").addEventListener("input", renderDashboardQueue);
 $("#queueFilter").addEventListener("change", event => {
     dashboardFilter = event.currentTarget.value;
@@ -1433,6 +1444,15 @@ $("#kpi").addEventListener("click", event => {
     renderDashboardQueue();
 });
 $("#queue").addEventListener("click", event => {
+    if (event.target.closest("[data-dashboard-clear]")) {
+        $("#queueSearch").value = "";
+        dashboardFilter = "all";
+        $("#queueFilter").value = "all";
+        renderDashboardKpis();
+        renderDashboardQueue();
+        $("#queueSearch").focus();
+        return;
+    }
     const button = event.target.closest("[data-dashboard-open]");
     if (button) dOpen(button.dataset.dashboardOpen);
 });
