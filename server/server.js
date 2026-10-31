@@ -120,7 +120,7 @@ const app = createApp();
 
 if (require.main === module) {
     const port = Number(process.env.PORT) || 3000;
-    app.listen(port, () => console.log(`Civic platform listening on http://localhost:${port}`));
+    app.listen(port, "0.0.0.0", () => console.log(`Civic platform listening on port ${port}`));
     startEscalationScheduler(pool);
 }
 
